@@ -62,7 +62,9 @@ def get_supported_regions_from_db() -> list[str]:
         client = get_supabase_client()
 
         logger.info("Querying supported regions from Supabase...")
-        response = client.table("supported_regions").select("region").order("region").execute()
+        response = (
+            client.table("supported_regions").select("region").order("region").execute()
+        )
 
         regions = [row["region"] for row in response.data]
         logger.info(
