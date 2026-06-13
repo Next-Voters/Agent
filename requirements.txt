@@ -12,4 +12,5 @@ openai
 tavily-python
 pymupdf4llm
 spacy>=3.7
+click>=8.0
 wordfreq>=3.1
