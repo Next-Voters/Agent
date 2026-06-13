@@ -16,7 +16,6 @@ from langgraph.prebuilt.tool_node import InjectedState
 from langgraph.types import Command
 
 from config.constants import MAX_RESEARCHER_INVOCATIONS
-from utils.agents import invoke_researcher_agent
 
 # ---------------------------------------------------------------------------
 # Tool
@@ -69,13 +68,8 @@ async def researcher_agent_tool(
             }
         )
 
-    result = await invoke_researcher_agent(
-        city=city,
-        topic=topic,
-        issue=issue,
-        search_guidance=search_guidance,
-        topic_description=topic_description,
-    )
+    from utils.agents import invoke_researcher_agent
+
     result = await invoke_researcher_agent(
         city=city,
         topic=topic,
@@ -84,8 +78,6 @@ async def researcher_agent_tool(
         topic_description=topic_description,
     )
 
-    summary = result["research_summary"]
-    sources = result["legislation_sources"]
     summary = result["research_summary"]
     sources = result["legislation_sources"]
 
