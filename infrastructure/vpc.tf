@@ -58,7 +58,7 @@ resource "aws_route_table_association" "public_b" {
 
 resource "aws_security_group" "ecs" {
   name        = "next-voters-${var.environment}-ecs-sg"
-  description = "ECS Fargate tasks — egress only, no inbound."
+  description = "ECS Fargate tasks - egress only, no inbound."
   vpc_id      = aws_vpc.main.id
 
   egress {
