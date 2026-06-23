@@ -74,7 +74,22 @@ Each region runs as an independent **ECS Fargate task**:
 - Reports written to **Supabase Postgres** `reports` table
 - After all topics complete, a `{region, report_id}` message is enqueued to **SQS**, triggering the **Email Lambda**
 - If any topic or the SQS enqueue fails, failure metadata is sent to the **Pipeline DLQ** before exit 1
-- **Email Lambda** (separate) reads reports and dispatches via **Amazon SES**
+- **Email Lambda** (separate repo/image) reads reports and dispatches via **Mailgun** (HTTP API; Mailgun API key + Supabase creds read from SSM at runtime)
+
+### Infrastructure as Code (Terraform)
+
+All AWS resources are defined as **Terraform** in `infrastructure/` (one file per concern: `vpc.tf`, `ecr.tf`, `ecs.tf`, `lambda.tf`, `sqs.tf`, `eventbridge.tf`, `cloudwatch.tf`, `iam.tf`, `ssm.tf`, `outputs.tf`, `variables.tf`). Deploy per environment with the matching var file:
+
+```bash
+cd infrastructure
+terraform plan  -var-file=staging.tfvars     # or production.tfvars
+terraform apply -var-file=staging.tfvars
+```
+
+- **Secrets live in SSM Parameter Store**, never in `*.tf` / `*.tfvars`. `ssm.tf` creates one `SecureString` per secret under `/next-voters/<env>/<KEY>` with a placeholder value and `ignore_changes = [value]`; real values are set out-of-band (`aws ssm put-parameter --overwrite --type SecureString ...`). `ignore_changes` does **not** keep secrets out of Terraform *state* — a refresh reads the decrypted value back into `terraform.tfstate`, so enable the encrypted remote backend (stubbed in `main.tf`) before setting real values.
+- **Pipeline (ECS)** secrets are injected as env vars via the container `secrets` block — the task **execution role** fetches them from SSM at task start (no app change; they arrive as ordinary env vars).
+- **Email Lambda** (separate repo) fetches its secrets from SSM at runtime via the `*_PARAM` env vars (see `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`).
+- `tfvars` hold only non-secret config (`environment`, `mailgun_domain`, `mailgun_sender`, `share_base_url`) and are committed; `*.tfstate` and `.terraform/` are git-ignored. For shared/production use, move state to the encrypted S3 backend stubbed in `main.tf`.
 
 ### Core Components
 
@@ -182,10 +197,17 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 - `SUPABASE_URL`, `SUPABASE_KEY`: Region/topic config + report storage
 - `TOGETHER_API_KEY`: Dynamic self-information scoring for context compression
 
+> In local/Docker runs these come from `.env`. In AWS they are stored in **SSM Parameter Store** (`/next-voters/<env>/<KEY>`, SecureString) and injected into the ECS task as env vars by the execution role — no code change; they arrive as ordinary env vars.
+
 **Container-specific**:
 - `REGION`: Region to run pipeline for (set by Dispatcher Lambda)
 - `SQS_QUEUE_URL`: SQS queue URL for report-ready messages (triggers Email Lambda)
 - `SQS_PIPELINE_DLQ_URL`: SQS dead letter queue URL for pipeline failure metadata
+
+**Email Lambda** (separate repo/image — reads SSM at runtime; see `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`):
+- `SHARE_BASE_URL`: Public base URL for report links rendered in emails
+- `MAILGUN_DOMAIN`, `MAILGUN_SENDER`, `MAILGUN_BASE_URL`: Mailgun sending config
+- `MAILGUN_API_KEY_PARAM`, `SUPABASE_URL_PARAM`, `SUPABASE_KEY_PARAM`: **names** of the SSM SecureStrings the Lambda fetches and decrypts at cold start (only the names live in the Lambda env; the values are fetched at runtime)
 
 ## Common Patterns
 
@@ -235,12 +257,14 @@ docker run -e REGION=toronto -e OPENAI_API_KEY=... -e TAVILY_API_KEY=... -e SUPA
 - Dispatcher Lambda launches one Fargate task per supported region
 - Each task runs `main.py` with `REGION` set, executing all topics and saving to Supabase
 - After all topics, task enqueues `{region, report_id}` to SQS; failures go to the Pipeline DLQ
-- Email Lambda reads from `reports` table and sends via SES
+- Email Lambda reads from `reports` table and sends via **Mailgun** (API key + Supabase creds fetched from SSM at runtime)
+- Infrastructure is **Terraform** (`infrastructure/`); all secrets live in **SSM Parameter Store** — see the *Infrastructure as Code (Terraform)* section above
 
 **Logs**: Emitted to stdout/stderr; collected by CloudWatch in production.
 
 ## Important Known Issues / WIP
 
+- **Email Lambda Mailgun cutover (in progress)**: the Terraform IaC has migrated SES→Mailgun and moved all secrets to SSM, but the Email Lambda's application code (separate repo/image) still needs to implement the SSM fetch + Mailgun send and read `SHARE_BASE_URL`. Implementation prompt + reference code: `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`. Until it ships, also set the SSM secret values + Mailgun DNS, and confirm the dispatcher launches ECS tasks with `assignPublicIp=ENABLED` (the execution role fetches SSM during provisioning).
 - Tavily Extract can fail on some domains (access restrictions, JS-heavy SPAs); when extraction fails for a URL, `web_search` returns an empty content string and the researcher works from search snippets only
 
 ## Common Development Tasks

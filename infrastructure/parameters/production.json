@@ -1,5 +1,0 @@
-[
-  { "ParameterKey": "Environment", "ParameterValue": "production" },
-  { "ParameterKey": "SesDomain", "ParameterValue": "PLACEHOLDER" },
-  { "ParameterKey": "SesSenderEmail", "ParameterValue": "PLACEHOLDER" }
-]
