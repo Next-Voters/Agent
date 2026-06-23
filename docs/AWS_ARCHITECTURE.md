@@ -28,7 +28,7 @@ flowchart LR
 
     %% Delivery layer
     EML["Email Lambda"]
-    SES["Simple Email Service"]
+    MAILGUN["Mailgun<br/>external email API"]
     USERS["User Inboxes"]
 
     %% Data layer
@@ -42,8 +42,8 @@ flowchart LR
     ECS -->|"enqueue<br/>{city, report_id}"| SQS
     SQS --> EML
     EML -->|"read report<br/>write send_log"| DB
-    EML --> SES
-    SES --> USERS
+    EML -->|"HTTPS API"| MAILGUN
+    MAILGUN --> USERS
 
     %% Side flows
     DL -.->|read cities| DB
@@ -56,8 +56,8 @@ flowchart LR
     classDef queue fill:#CC2264,stroke:#5C0F2E,stroke-width:2px,color:#fff
     classDef user fill:#7B68EE,stroke:#3F2E8C,stroke-width:2px,color:#fff
 
-    class EB,DL,ECS,EML,SES aws
-    class EXT ext
+    class EB,DL,ECS,EML aws
+    class EXT,MAILGUN ext
     class DB db
     class SQS,DLQ,PDLQ queue
     class USERS user
@@ -71,8 +71,8 @@ flowchart LR
 1. **EventBridge** triggers the **Dispatcher Lambda** on a weekly cron.
 2. **Dispatcher Lambda** reads the active cities from **Supabase** and fans out one **Elastic Container Service Fargate** task per city.
 3. Each **Fargate task** calls external APIs (LLM, scraping) to generate report content, writes the report and its bullets to **Supabase**, then enqueues a message to **Simple Queue Service** containing `{city, report_id}` and exits. If any topic or the SQS enqueue fails, the task sends failure metadata to the **Pipeline Dead Letter Queue** before exiting 1.
-4. **Simple Queue Service** holds the message. AWS-managed pollers invoke the **Email Lambda** with batches of messages. Lambda reserved concurrency caps parallel executions to protect Simple Email Service rate limits.
-5. **Email Lambda** reads the report and bullets from Supabase, queries subscribers for the city, renders the email, sends via **Simple Email Service**, and writes to `send_log` for idempotency.
+4. **Simple Queue Service** holds the message. AWS-managed pollers invoke the **Email Lambda** with batches of messages. Lambda reserved concurrency caps parallel executions to protect Mailgun rate limits.
+5. **Email Lambda** reads the report and bullets from Supabase, queries subscribers for the city, renders the email, sends via **Mailgun** (HTTPS API; API key read from SSM), and writes to `send_log` for idempotency.
 6. Failed Email Lambda messages are retried automatically by Simple Queue Service. After N failures, they land in the **Email Dead Letter Queue** for investigation. Pipeline-side failures land in the separate **Pipeline Dead Letter Queue** directly from the Fargate task.
 
 ---
@@ -85,9 +85,9 @@ flowchart LR
     CI["CI/CD<br/>build + tag image"]
 
     subgraph ECR["Elastic Container Registry"]
-        R1["next-voters-agent"]
-        R2["lambda-dispatcher-pipelines"]
-        R3["lambda-email-sender"]
+        R1["next-voters-&lt;env&gt;-agent"]
+        R2["next-voters-&lt;env&gt;-dispatcher"]
+        R3["next-voters-&lt;env&gt;-email"]
     end
 
     ECS_T["Elastic Container Service<br/>Fargate task"]
@@ -119,9 +119,9 @@ flowchart LR
 
 | Repository | Consumer | Purpose |
 |---|---|---|
-| `next-voters-agent` | Elastic Container Service Fargate | LangGraph agent that scrapes external sources, calls LLMs, and generates report bullets |
-| `lambda-dispatcher-pipelines` | Dispatcher Lambda | Reads active cities from Supabase and fans out Fargate tasks |
-| `lambda-email-sender` | Email Lambda | Renders email templates and sends via Simple Email Service |
+| `next-voters-<env>-agent` | Elastic Container Service Fargate | LangGraph agent that scrapes external sources, calls LLMs, and generates report bullets |
+| `next-voters-<env>-dispatcher` | Dispatcher Lambda | Reads active cities from Supabase and fans out Fargate tasks |
+| `next-voters-<env>-email` | Email Lambda | Renders email templates and sends via Mailgun |
 
 ### Deployment Flow
 

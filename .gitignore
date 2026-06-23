@@ -4,3 +4,16 @@ __pycache__
 .idea
 .ruff_cache
 email_failures.json
+
+# OS noise
+.DS_Store
+
+# Terraform — never commit state (may contain secret values) or local caches.
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+# Keep .terraform.lock.hcl committed (provider dependency lock).
+# *.tfvars are intentionally tracked here — they hold only non-secret config.
