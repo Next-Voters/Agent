@@ -1,5 +1,7 @@
-# Lightweight slop-catcher — blocks glaring issues only.
-# Full lint + format enforcement lives in CI (.github/workflows/lint.yml).
+# Mirrors CI (.github/workflows/lint.yml): the ruff hooks use the same pinned
+# version (see requirements-dev.txt) and the same rules + format config (from
+# pyproject.toml), so a clean pre-commit means a green Lint job. Keep the rev
+# here and ruff in requirements-dev.txt on the same version when bumping.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -13,16 +15,14 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.15
     hooks:
-      - id: ruff
-        args:
-          - "--select"
-          # F  — dead code: unused imports/vars, undefined names
-          # W  — whitespace issues (blank lines, trailing WS)
-          # ERA — commented-out code left behind
-          # PIE790 — unnecessary `pass` in non-empty bodies
-          - "F,W,ERA,PIE790"
-          - "--fix"
-          - "--exit-non-zero-on-fix"
+      # Same rules as CI's `ruff check .` (rules come from pyproject.toml).
+      # --fix auto-applies fixable violations and fails the commit so they get
+      # re-staged; non-fixable ones are reported and block the commit.
+      - id: ruff-check
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      # Same as CI's `ruff format --check .` (reformats in place and fails on
+      # any change, so formatting can't drift past the commit).
+      - id: ruff-format
 
   - repo: local
     hooks:

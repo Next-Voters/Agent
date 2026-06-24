@@ -1,4 +1,6 @@
 pre-commit>=4.0,<5
-ruff>=0.11,<1
+# Keep in sync with the ruff-pre-commit rev in .pre-commit-config.yaml so the
+# local hook and CI's Lint job run identical checks.
+ruff==0.15.15
 pytest>=8.0,<9
 pytest-asyncio>=0.24,<1
