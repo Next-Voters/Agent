@@ -225,6 +225,22 @@ resource "aws_iam_role_policy" "worker_lambda_access" {
         Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
         Resource = aws_sqs_queue.worker_jobs.arn
       },
+      # Reads Supabase credentials from SSM at cold start. Scoped to the two
+      # Supabase parameters; kms:Decrypt is gated to SSM-originated calls.
+      {
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = [
+          aws_ssm_parameter.supabase_url.arn,
+          aws_ssm_parameter.supabase_key.arn,
+        ]
+      },
+      {
+        Effect    = "Allow"
+        Action    = "kms:Decrypt"
+        Resource  = "*"
+        Condition = { StringEquals = { "kms:ViaService" = local.ssm_via_service_kms } }
+      },
       {
         Effect   = "Allow"
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]

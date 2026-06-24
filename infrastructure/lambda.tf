@@ -62,6 +62,15 @@ resource "aws_lambda_function" "worker" {
   memory_size   = 256
   timeout       = 60
 
+  environment {
+    variables = {
+      # SSM parameter NAMES (not values). store.py fetches and decrypts these at
+      # cold start via ssm:GetParameter; the values never live in the env block.
+      SUPABASE_URL_PARAM = aws_ssm_parameter.supabase_url.name
+      SUPABASE_KEY_PARAM = aws_ssm_parameter.supabase_key.name
+    }
+  }
+
   depends_on = [aws_cloudwatch_log_group.worker_lambda]
 
   # CI (push-worker-to-ecr.yml) deploys new images via update-function-code to

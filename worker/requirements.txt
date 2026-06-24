@@ -1,4 +1,4 @@
 # Worker Lambda dependencies.
-# The scaffold handler only uses the standard library; add packages here as the
-# real job logic is implemented (they are installed into the Lambda task root by
-# docker/Dockerfile.worker).
+# boto3 is provided by the AWS Lambda Python base image (imported lazily in
+# store.py only for the SSM secret fetch), so it is intentionally not pinned here.
+supabase
