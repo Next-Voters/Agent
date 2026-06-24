@@ -26,9 +26,11 @@ Many people — working families, elderly residents, anyone already stretched th
 
 Next Voters is a multi-agent research pipeline. Each run discovers legislation sources, fetches and extracts content, and produces a structured summary — all orchestrated by LangGraph-based agents. It runs as standalone software via CLI or Docker container.
 
+For the full picture — agent design, AWS deployment, database schema, and operations — see the [architecture documentation](docs/ARCHITECTURE.md).
+
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
+- [Architecture](docs/ARCHITECTURE.md) — index of all design, infrastructure, and operations docs
 - [Operations](docs/OPERATIONS.md)
 - [Contributing](CONTRIBUTING.md)
 
