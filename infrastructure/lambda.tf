@@ -63,6 +63,13 @@ resource "aws_lambda_function" "worker" {
   timeout       = 60
 
   depends_on = [aws_cloudwatch_log_group.worker_lambda]
+
+  # CI (push-worker-to-ecr.yml) deploys new images via update-function-code to
+  # an immutable :<sha> tag. Terraform owns the function but not its rolling
+  # image, so ignore image_uri drift to avoid reverting CI deploys to :latest.
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }
 
 resource "aws_lambda_event_source_mapping" "worker_sqs_trigger" {

@@ -303,9 +303,10 @@ resource "aws_iam_role_policy" "github_actions_cicd" {
       },
       {
         # Lets CI roll the worker Lambda to a freshly pushed image. Scoped to
-        # the worker function; GetFunction backs `aws lambda wait`.
+        # the worker function; GetFunctionConfiguration backs the
+        # `aws lambda wait function-updated` poll after update-function-code.
         Effect   = "Allow"
-        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:GetFunctionConfiguration"]
         Resource = aws_lambda_function.worker.arn
       }
     ]
