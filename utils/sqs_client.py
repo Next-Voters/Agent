@@ -63,6 +63,37 @@ def enqueue_report(region: str, report_id: int) -> bool:
         return False
 
 
+def enqueue_worker_job(region: str, report_id: int) -> bool:
+    """Enqueue a worker job so the worker Lambda post-processes a saved report.
+
+    Sends {region, report_id} to the worker-jobs queue. Independent of
+    enqueue_report (which notifies the Email Lambda on the report-ready queue).
+
+    Args:
+        region: Region name matching supported_regions.region.
+        report_id: The reports.id primary key returned by save_report().
+
+    Returns:
+        True if the message was sent successfully, False otherwise.
+    """
+    queue_url = os.getenv("SQS_WORKER_QUEUE_URL")
+    if not queue_url:
+        logger.error("SQS_WORKER_QUEUE_URL not set — cannot enqueue worker job")
+        return False
+
+    try:
+        sqs = get_sqs_client()
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({"region": region, "report_id": report_id}),
+        )
+        logger.info(f"Enqueued worker job: region={region}, report_id={report_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to enqueue worker job: {e}")
+        return False
+
+
 def enqueue_pipeline_failure(
     region: str, failures: list[str], report_id: int | None
 ) -> bool:

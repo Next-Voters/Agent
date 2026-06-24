@@ -203,6 +203,7 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 - `REGION`: Region to run pipeline for (set by Dispatcher Lambda)
 - `SQS_QUEUE_URL`: SQS queue URL for report-ready messages (triggers Email Lambda)
 - `SQS_PIPELINE_DLQ_URL`: SQS dead letter queue URL for pipeline failure metadata
+- `SQS_WORKER_QUEUE_URL`: SQS queue URL for worker jobs (triggers the worker Lambda to post-process the saved report)
 
 **Email Lambda** (separate repo/image — reads SSM at runtime; see `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`):
 - `SHARE_BASE_URL`: Public base URL for report links rendered in emails

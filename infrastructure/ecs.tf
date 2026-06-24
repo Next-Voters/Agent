@@ -33,7 +33,8 @@ resource "aws_ecs_task_definition" "pipeline" {
 
     environment = [
       { name = "SQS_QUEUE_URL", value = aws_sqs_queue.report_ready.url },
-      { name = "SQS_PIPELINE_DLQ_URL", value = aws_sqs_queue.pipeline_dlq.url }
+      { name = "SQS_PIPELINE_DLQ_URL", value = aws_sqs_queue.pipeline_dlq.url },
+      { name = "SQS_WORKER_QUEUE_URL", value = aws_sqs_queue.worker_jobs.url }
     ]
 
     # Secret values are injected from SSM at task start by the execution role.

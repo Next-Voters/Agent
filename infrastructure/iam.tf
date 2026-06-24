@@ -87,9 +87,13 @@ resource "aws_iam_role_policy" "ecs_task_sqs" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["sqs:SendMessage", "sqs:GetQueueUrl"]
-      Resource = [aws_sqs_queue.report_ready.arn, aws_sqs_queue.pipeline_dlq.arn]
+      Effect = "Allow"
+      Action = ["sqs:SendMessage", "sqs:GetQueueUrl"]
+      Resource = [
+        aws_sqs_queue.report_ready.arn,
+        aws_sqs_queue.pipeline_dlq.arn,
+        aws_sqs_queue.worker_jobs.arn,
+      ]
     }]
   })
 }

@@ -20,7 +20,11 @@ def run_container_mode(city: str) -> int:
     """
     from pipelines.nv_local import chain
     from utils.report.storage import save_report
-    from utils.sqs_client import enqueue_pipeline_failure, enqueue_report
+    from utils.sqs_client import (
+        enqueue_pipeline_failure,
+        enqueue_report,
+        enqueue_worker_job,
+    )
     from utils.supabase_client import get_supported_regions_from_db
 
     logger = get_logger(__name__)
@@ -67,6 +71,10 @@ def run_container_mode(city: str) -> int:
     # Enqueue SQS message so the Email Lambda can send the report
     if report_id is not None and not enqueue_report(city, report_id):
         failures.append(f"{city} (SQS enqueue)")
+
+    # Enqueue a worker job so the worker Lambda post-processes the report
+    if report_id is not None and not enqueue_worker_job(city, report_id):
+        failures.append(f"{city} (worker enqueue)")
 
     if failures:
         logger.error(f"Pipeline failures: {failures}")
