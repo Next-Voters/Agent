@@ -38,6 +38,18 @@ output "email_lambda_arn" {
   value = aws_lambda_function.email.arn
 }
 
+output "worker_ecr_repo_uri" {
+  value = aws_ecr_repository.worker.repository_url
+}
+
+output "worker_queue_url" {
+  value = aws_sqs_queue.worker_jobs.url
+}
+
+output "worker_lambda_arn" {
+  value = aws_lambda_function.worker.arn
+}
+
 output "github_actions_role_arn" {
   value = aws_iam_role.github_actions.arn
 }

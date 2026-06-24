@@ -53,3 +53,25 @@ resource "aws_lambda_event_source_mapping" "email_sqs_trigger" {
   batch_size       = 1
   enabled          = true
 }
+
+resource "aws_lambda_function" "worker" {
+  function_name = "next-voters-${var.environment}-worker"
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.worker.repository_url}:${var.worker_image_tag}"
+  role          = aws_iam_role.worker_lambda.arn
+  memory_size   = 256
+  timeout       = 60
+
+  depends_on = [aws_cloudwatch_log_group.worker_lambda]
+}
+
+resource "aws_lambda_event_source_mapping" "worker_sqs_trigger" {
+  event_source_arn = aws_sqs_queue.worker_jobs.arn
+  function_name    = aws_lambda_function.worker.arn
+  batch_size       = 1
+  enabled          = true
+
+  # The handler returns SQS partial batch responses; without this, a reported
+  # failure would be silently dropped instead of retried / sent to the DLQ.
+  function_response_types = ["ReportBatchItemFailures"]
+}

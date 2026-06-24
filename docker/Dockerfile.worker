@@ -1,0 +1,18 @@
+# Container image for the SQS-triggered worker Lambda.
+#
+# Uses the AWS Lambda Python base image, which bundles the Runtime Interface
+# Client so the function speaks the Lambda runtime API. This differs from the
+# ECS pipeline image (docker/Dockerfile), which is a plain python:3.11-slim
+# container run via `python main.py`.
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install worker dependencies. ${LAMBDA_TASK_ROOT} is the working directory in
+# the base image, so handler code copied below resolves on the import path.
+COPY worker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy handler code into the Lambda task root.
+COPY worker/ ${LAMBDA_TASK_ROOT}/
+
+# CMD is "<module>.<function>" — the symbol the runtime invokes per event.
+CMD ["handler.lambda_handler"]

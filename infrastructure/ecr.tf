@@ -14,10 +14,10 @@ locals {
       {
         rulePriority = 2
         selection = {
-          tagStatus      = "tagged"
-          tagPrefixList  = ["v"]
-          countType      = "imageCountMoreThan"
-          countNumber    = 10
+          tagStatus     = "tagged"
+          tagPrefixList = ["v"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 10
         }
         action = { type = "expire" }
       }
@@ -61,5 +61,18 @@ resource "aws_ecr_repository" "email" {
 
 resource "aws_ecr_lifecycle_policy" "email" {
   repository = aws_ecr_repository.email.name
+  policy     = local.ecr_lifecycle_policy
+}
+
+resource "aws_ecr_repository" "worker" {
+  name = "next-voters-${var.environment}-worker"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "worker" {
+  repository = aws_ecr_repository.worker.name
   policy     = local.ecr_lifecycle_policy
 }

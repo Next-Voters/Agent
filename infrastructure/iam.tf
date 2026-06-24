@@ -198,6 +198,42 @@ resource "aws_iam_role_policy" "email_lambda_access" {
   })
 }
 
+# --- Worker Lambda Role ---
+
+resource "aws_iam_role" "worker_lambda" {
+  name = "next-voters-${var.environment}-worker-lambda"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_lambda_access" {
+  name = "WorkerAccess"
+  role = aws_iam_role.worker_lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+        Resource = aws_sqs_queue.worker_jobs.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.worker_lambda.arn}:*"
+      }
+    ]
+  })
+}
+
 # --- GitHub Actions OIDC ---
 
 resource "aws_iam_openid_connect_provider" "github_actions" {
@@ -251,6 +287,7 @@ resource "aws_iam_role_policy" "github_actions_cicd" {
           aws_ecr_repository.pipeline.arn,
           aws_ecr_repository.dispatcher.arn,
           aws_ecr_repository.email.arn,
+          aws_ecr_repository.worker.arn,
         ]
       },
       {
@@ -263,6 +300,13 @@ resource "aws_iam_role_policy" "github_actions_cicd" {
         Effect   = "Allow"
         Action   = "iam:PassRole"
         Resource = [aws_iam_role.ecs_task_execution.arn, aws_iam_role.ecs_task.arn]
+      },
+      {
+        # Lets CI roll the worker Lambda to a freshly pushed image. Scoped to
+        # the worker function; GetFunction backs `aws lambda wait`.
+        Effect   = "Allow"
+        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+        Resource = aws_lambda_function.worker.arn
       }
     ]
   })

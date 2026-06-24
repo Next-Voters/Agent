@@ -12,3 +12,8 @@ resource "aws_cloudwatch_log_group" "email_lambda" {
   name              = "/aws/lambda/next-voters-${var.environment}-email"
   retention_in_days = var.log_retention_days
 }
+
+resource "aws_cloudwatch_log_group" "worker_lambda" {
+  name              = "/aws/lambda/next-voters-${var.environment}-worker"
+  retention_in_days = var.log_retention_days
+}

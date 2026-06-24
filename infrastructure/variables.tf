@@ -51,6 +51,11 @@ variable "email_image_tag" {
   default = "latest"
 }
 
+variable "worker_image_tag" {
+  type    = string
+  default = "latest"
+}
+
 variable "schedule_expression" {
   type        = string
   default     = "cron(0 9 ? * MON *)"
@@ -96,6 +101,17 @@ variable "report_queue_visibility_timeout" {
 }
 
 variable "email_dlq_max_receive_count" {
+  type    = number
+  default = 3
+}
+
+variable "worker_queue_visibility_timeout" {
+  type        = number
+  default     = 60
+  description = "Aligned with worker Lambda timeout."
+}
+
+variable "worker_dlq_max_receive_count" {
   type    = number
   default = 3
 }
