@@ -4,7 +4,7 @@
 # here and ruff in requirements-dev.txt on the same version when bumping.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -13,7 +13,7 @@ repos:
         args: ["--maxkb=500"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.15
+    rev: v0.15.19
     hooks:
       # Same rules as CI's `ruff check .` (rules come from pyproject.toml).
       # --fix auto-applies fixable violations and fails the commit so they get
