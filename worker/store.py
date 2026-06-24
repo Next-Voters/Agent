@@ -11,7 +11,7 @@ fetched and decrypted from SSM Parameter Store using the ``SUPABASE_URL_PARAM`` 
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from supabase import Client, create_client
@@ -86,7 +86,7 @@ def count_headers(report_id: int) -> int:
 
 def mark_processed(report_id: int) -> None:
     """Stamp the report's ``processed_at`` with the current UTC time (idempotent)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     get_client().table("reports").update({"processed_at": now}).eq(
         "id", report_id
     ).execute()

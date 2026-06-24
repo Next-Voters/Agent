@@ -21,6 +21,7 @@ _GET_REGIONS = "utils.supabase_client.get_supported_regions_from_db"
 _CHAIN = "pipelines.nv_local.chain"
 _SAVE_REPORT = "utils.report.storage.save_report"
 _ENQUEUE_REPORT = "utils.sqs_client.enqueue_report"
+_ENQUEUE_WORKER = "utils.sqs_client.enqueue_worker_job"
 _ENQUEUE_FAILURE = "utils.sqs_client.enqueue_pipeline_failure"
 
 
@@ -97,6 +98,7 @@ class TestPipelineExecution:
             patch(_CHAIN) as mock_chain,
             patch(_SAVE_REPORT, return_value=42),
             patch(_ENQUEUE_REPORT, return_value=True),
+            patch(_ENQUEUE_WORKER, return_value=True),
             patch(_ENQUEUE_FAILURE) as mock_dlq,
         ):
             mock_chain.invoke.return_value = chain_result
@@ -119,6 +121,7 @@ class TestReportSaving:
             patch(_CHAIN) as mock_chain,
             patch(_SAVE_REPORT, return_value=10) as mock_save,
             patch(_ENQUEUE_REPORT, return_value=True),
+            patch(_ENQUEUE_WORKER, return_value=True),
             patch(_ENQUEUE_FAILURE),
         ):
             mock_chain.invoke.return_value = chain_result
@@ -172,6 +175,7 @@ class TestSqsNotification:
             patch(_CHAIN) as mock_chain,
             patch(_SAVE_REPORT, return_value=77),
             patch(_ENQUEUE_REPORT, return_value=True) as mock_enqueue,
+            patch(_ENQUEUE_WORKER, return_value=True),
             patch(_ENQUEUE_FAILURE),
         ):
             mock_chain.invoke.return_value = chain_result
@@ -186,6 +190,7 @@ class TestSqsNotification:
             patch(_CHAIN) as mock_chain,
             patch(_SAVE_REPORT, return_value=77),
             patch(_ENQUEUE_REPORT, return_value=False),
+            patch(_ENQUEUE_WORKER, return_value=True),
             patch(_ENQUEUE_FAILURE) as mock_dlq,
         ):
             mock_chain.invoke.return_value = chain_result
@@ -204,9 +209,66 @@ class TestSqsNotification:
             patch(_CHAIN) as mock_chain,
             patch(_SAVE_REPORT, return_value=None),
             patch(_ENQUEUE_REPORT) as mock_enqueue,
+            patch(_ENQUEUE_WORKER),
             patch(_ENQUEUE_FAILURE),
         ):
             mock_chain.invoke.return_value = chain_result
             run_container_mode("toronto")
 
         mock_enqueue.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Worker job enqueue
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerEnqueue:
+    def test_enqueue_worker_job_called_with_report_id(self):
+        chain_result = _chain_result()
+        with (
+            patch(_GET_REGIONS, return_value=["toronto"]),
+            patch(_CHAIN) as mock_chain,
+            patch(_SAVE_REPORT, return_value=77),
+            patch(_ENQUEUE_REPORT, return_value=True),
+            patch(_ENQUEUE_WORKER, return_value=True) as mock_worker,
+            patch(_ENQUEUE_FAILURE),
+        ):
+            mock_chain.invoke.return_value = chain_result
+            run_container_mode("toronto")
+
+        mock_worker.assert_called_once_with("toronto", 77)
+
+    def test_worker_enqueue_failure_adds_to_failures_and_returns_1(self):
+        chain_result = _chain_result()
+        with (
+            patch(_GET_REGIONS, return_value=["toronto"]),
+            patch(_CHAIN) as mock_chain,
+            patch(_SAVE_REPORT, return_value=77),
+            patch(_ENQUEUE_REPORT, return_value=True),
+            patch(_ENQUEUE_WORKER, return_value=False),
+            patch(_ENQUEUE_FAILURE) as mock_dlq,
+        ):
+            mock_chain.invoke.return_value = chain_result
+            result = run_container_mode("toronto")
+
+        assert result == 1
+        mock_dlq.assert_called_once()
+        failures_arg = mock_dlq.call_args.args[1]
+        assert any("worker" in f for f in failures_arg)
+
+    def test_no_report_id_skips_enqueue_worker_job(self):
+        """If all topics failed to save, enqueue_worker_job is never called."""
+        chain_result = _chain_result()
+        with (
+            patch(_GET_REGIONS, return_value=["toronto"]),
+            patch(_CHAIN) as mock_chain,
+            patch(_SAVE_REPORT, return_value=None),
+            patch(_ENQUEUE_REPORT),
+            patch(_ENQUEUE_WORKER) as mock_worker,
+            patch(_ENQUEUE_FAILURE),
+        ):
+            mock_chain.invoke.return_value = chain_result
+            run_container_mode("toronto")
+
+        mock_worker.assert_not_called()
