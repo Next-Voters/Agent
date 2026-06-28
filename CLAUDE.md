@@ -25,8 +25,7 @@ pip install -r requirements.txt
 
 - Copy `.env.example` to `.env` and set required keys
 - All entrypoints and modules that read env vars call `load_dotenv()` from `python-dotenv`, so `.env` is loaded automatically
-- **CLI entrypoint**: `main.py` → `pipelines/nv_local.py` (single-region, requires region argument validated against Supabase `regions`)
-- **Container entrypoint**: `main.py` with `REGION` env var set (single-region, runs all topics, saves to Supabase `reports` table)
+- **Entrypoint**: `main.py` requires the `REGION` env var set (single-region, runs all topics, validates the region against Supabase `supported_regions`, saves to the Supabase `reports` table). It exits 1 with a clear error if `REGION` is unset.
 
 ### Common Commands
 
@@ -34,17 +33,12 @@ pip install -r requirements.txt
 # Compile check (catches syntax errors early)
 python -m compileall -q .
 
-# Run pipeline for a single region (requires OPENAI_API_KEY + TAVILY_API_KEY)
-python main.py <region_name>
-
-# Run pipeline for a region scoped to a specific topic
-python main.py <region_name> -t <topic_name>
-
-# Container mode (runs all topics for a region, saves to DB)
+# Run the pipeline for a region (runs all topics, saves to DB).
+# Requires OPENAI_API_KEY + TAVILY_API_KEY + TOGETHER_API_KEY + SUPABASE_URL/KEY.
 REGION=<region_name> python main.py
 ```
 
-**Post-implementation verification**: After any code changes, always run `python -m compileall -q .` followed by `python main.py <region_name>` to confirm both compile-time and runtime correctness.
+**Post-implementation verification**: After any code changes, always run `python -m compileall -q .` followed by `REGION=<region_name> python main.py` to confirm both compile-time and runtime correctness.
 
 ### Testing
 
@@ -119,7 +113,6 @@ terraform apply -var-file=staging.tfvars
 - `notes.py`: `note_taker` (records notes as SystemMessage with slug ID) and `delete_note` (removes via RemoveMessage)
 - `handoff.py`: Researcher's exit tool — writes summary + sources to state and terminates the graph via `goto=END`
 - `researcher_agent_tool.py`: Agent-as-tool wrapper that invokes the researcher subagent in an isolated context window
-- `source_validator.py`: Parallel URL validation using structured mini-LLM calls
 - `middleware.py`: `ReflectionMiddleware` for injecting reflection history before each LLM call
 - `_helpers.py`: `ok()`/`err()` Command builders shared by all tools
 - `services/tavily.py`, `services/extract.py`: Direct SDK wrappers for Tavily Search and Extract
@@ -245,7 +238,7 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 
 ## Deployment
 
-**Local**: `python main.py <region>`
+**Local**: `REGION=<region> python main.py`
 
 **Docker**:
 ```bash
@@ -287,7 +280,7 @@ docker run -e REGION=toronto -e OPENAI_API_KEY=... -e TAVILY_API_KEY=... -e SUPA
 2. Note: All LLM factory functions reference this dict, so one change affects all calls
 
 **Debugging a region pipeline failure**:
-1. Run single region: `python main.py <region_name>`
+1. Run single region: `REGION=<region_name> python main.py`
 2. Check error message in stdout/stderr
 3. Likely causes: missing env vars (`OPENAI_API_KEY`, `TAVILY_API_KEY`), Tavily Extract failure on a domain, agent hitting `recursion_limit=40` before completing
 4. Container mode: check ECS task logs in CloudWatch, verify `REGION` is in `regions` table

@@ -1,4 +1,4 @@
-"""CLI and container entrypoint for NV Local pipeline runs."""
+"""Container entrypoint for NV Local pipeline runs."""
 
 import logging
 import os
@@ -84,19 +84,12 @@ def run_container_mode(city: str) -> int:
     return 0
 
 
-def run_cli_mode() -> None:
-    """Interactive CLI mode with argparse."""
-    from pipelines.nv_local import main as pipeline_main
-
-    pipeline_main()
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    nv_region = os.getenv("REGION")
+    region = os.getenv("REGION")
+    if not region:
+        get_logger(__name__).error("REGION environment variable is required")
+        sys.exit(1)
 
-    if nv_region:
-        sys.exit(run_container_mode(nv_region))
-    else:
-        run_cli_mode()
+    sys.exit(run_container_mode(region))

@@ -1,6 +1,6 @@
 # Contributing
 
-This project is a small Python codebase with a CLI-oriented workflow.
+This project is a small Python codebase that runs as a container, driven by the `REGION` environment variable.
 
 ## Development Setup
 
@@ -13,18 +13,21 @@ pip install -r requirements.txt
 Environment variables:
 
 - Copy `.env.example` to `.env` and set required keys.
-- `run_cli_main.py` loads `.env`; `main.py` expects env vars to already be present.
+- `main.py` calls `dotenv.load_dotenv()`, so a `.env` file is loaded automatically.
 
 ## Running Locally
 
+The pipeline runs in container mode, selecting its region from the `REGION` env var:
+
 ```bash
-python main.py
+REGION=<region> python main.py
 ```
 
-Rich console wrapper:
+Or build and run the container image:
 
 ```bash
-python run_cli_main.py
+docker build -f docker/Dockerfile -t nv-local .
+docker run -e REGION=<region> --env-file .env nv-local
 ```
 
 ## Testing

@@ -20,21 +20,6 @@ class ReflectionEntry(BaseModel):
     )
 
 
-class SourceAssessment(BaseModel):
-    """Per-source structured output produced by a sub-agent validator.
-
-    Emitted by the supervisor's parallel fan-out step in the legislation
-    finder. Downstream code can accept/reject URLs without re-running the
-    monolithic ReAct loop for each candidate.
-    """
-
-    url: str = Field(description="Source URL being assessed")
-    accepted: bool = Field(
-        default=False,
-        description="Whether the source meets the pipeline's reliability bar",
-    )
-
-
 class LegislationItem(BaseModel):
     """A single legislation action with headline and bullet points."""
 

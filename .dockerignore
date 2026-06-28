@@ -22,3 +22,13 @@ htmlcov
 .tox
 .mypy_cache
 .ruff_cache
+
+# Non-runtime: deployment, tests, CI, tooling, separate Lambdas
+infrastructure/
+tests/
+worker/
+.github/
+.claude/
+*.tfvars
+*.tfstate
+requirements-dev.txt

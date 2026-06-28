@@ -8,7 +8,6 @@ from langgraph.graph.message import add_messages
 
 from utils.schemas.pydantic import (
     ReflectionEntry,
-    SourceAssessment,
     WriterOutput,
 )
 
@@ -48,16 +47,6 @@ class LeadResearcherState(TypedDict):
     topic: NotRequired[str]
     legislation_sources: NotRequired[Annotated[list[str | dict], operator.add]]
     researcher_invocation_count: NotRequired[Annotated[int, operator.add]]
-
-
-# Legacy state — kept for downstream pipeline nodes (note_taker,
-# summary_writer) which are not being changed in this refactor.
-class LegislationFinderState(BaseAgentState):
-    """Agent-specific state for the legislation finder agent (legacy)."""
-
-    region: NotRequired[str]
-    legislation_sources: NotRequired[Annotated[list[str | dict], operator.add]]
-    source_assessments: NotRequired[list[SourceAssessment]]
 
 
 class TopicResult(TypedDict):

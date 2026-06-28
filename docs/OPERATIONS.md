@@ -4,7 +4,7 @@ This document describes how NV Local is typically run in development and how it 
 
 ## Environments
 
-- Local dev: run `python main.py <city>` from a virtualenv
+- Local dev: build and run `docker/Dockerfile` with `REGION` env var set (or run `REGION=<city> python main.py` from a virtualenv)
 - Container: build and run `docker/Dockerfile` with `REGION` env var set
 - CI/CD: GitHub Actions builds and pushes a container image to Amazon ECR
 
@@ -78,7 +78,7 @@ Required GitHub configuration:
 Symptoms: empty legislation sources or empty content blocks.
 
 1) Verify `TAVILY_API_KEY` is present in the runtime environment.
-2) Tavily Extract can fail on JS-heavy SPAs or access-restricted domains; the pipeline falls back to `markdown.new` but this is not 100% reliable.
+2) Tavily Extract can fail on JS-heavy SPAs or access-restricted domains; when extraction fails for a URL the researcher works from search snippets only.
 3) If failures are widespread, check Tavily service status.
 
 ### OpenAI Errors / Rate Limits

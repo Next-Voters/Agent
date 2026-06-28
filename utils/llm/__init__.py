@@ -4,7 +4,7 @@ from .config import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TIMEOUT,
 )
-from .factory import get_llm, get_mini_llm, get_structured_llm, get_structured_mini_llm
+from .factory import get_llm, get_mini_llm, get_structured_llm
 
 __all__ = [
     "DEFAULT_TEMPERATURE",
@@ -14,5 +14,4 @@ __all__ = [
     "get_llm",
     "get_mini_llm",
     "get_structured_llm",
-    "get_structured_mini_llm",
 ]
