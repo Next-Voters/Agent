@@ -8,4 +8,5 @@ supabase
 boto3
 tavily-python
 spacy>=3.7
+click>=8.0  # required at build time by `spacy download` (spacy.cli imports click directly; typer no longer pulls it transitively)
 wordfreq>=3.1
