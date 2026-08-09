@@ -1,4 +1,0 @@
-# Worker Lambda dependencies.
-# boto3 is provided by the AWS Lambda Python base image (imported lazily in
-# store.py only for the SSM secret fetch), so it is intentionally not pinned here.
-supabase
