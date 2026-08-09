@@ -4,8 +4,8 @@
   import RegionSection from "./lib/RegionSection.svelte";
   import StatusStrip from "./lib/StatusStrip.svelte";
 
-  let regions = $state([]);
-  let selectedRegion = $state("");
+  let regionsByType = $state({});
+  let selectedByType = $state({});
   let starting = $state(false);
   let message = $state("");
   let messageIsError = $state(false);
@@ -15,6 +15,22 @@
   let activeReportId = $state(null);
   let activeReport = $state(null);
   let detailError = $state("");
+
+  // Only one region can be picked at a time, but each type gets its own
+  // dropdown — picking in one clears any selection in the others.
+  const selectedRegion = $derived(
+    Object.values(selectedByType).find((value) => value) ?? "",
+  );
+
+  function selectFromType(type, value) {
+    selectedByType = { [type]: value };
+  }
+
+  // Once a type has a region picked, the other types' dropdowns lock until
+  // that selection is cleared back to its placeholder.
+  function isLockedOut(type) {
+    return Object.entries(selectedByType).some(([t, value]) => t !== type && value);
+  }
 
   // Reports segregated into one section per city, newest first inside each.
   const regionSections = $derived.by(() => {
@@ -32,8 +48,7 @@
     try {
       const res = await fetch("/api/regions");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      regions = (await res.json()).regions;
-      if (!selectedRegion && regions.length) selectedRegion = regions[0];
+      regionsByType = (await res.json()).regions;
     } catch (err) {
       message = `Failed to load regions: ${err.message}`;
       messageIsError = true;
@@ -141,14 +156,23 @@
   <section class="card">
     <h2>Start a run</h2>
     <div class="run-form">
-      <select bind:value={selectedRegion} disabled={!regions.length}>
-        {#if !regions.length}
+      {#if !Object.keys(regionsByType).length}
+        <select disabled>
           <option value="">Loading regions…</option>
-        {/if}
-        {#each regions as region (region)}
-          <option value={region}>{region}</option>
-        {/each}
-      </select>
+        </select>
+      {/if}
+      {#each Object.entries(regionsByType) as [type, typeRegions] (type)}
+        <select
+          value={selectedByType[type] ?? ""}
+          disabled={isLockedOut(type)}
+          onchange={(e) => selectFromType(type, e.currentTarget.value)}
+        >
+          <option value="">Select a {type}…</option>
+          {#each typeRegions as region (region)}
+            <option value={region}>{region}</option>
+          {/each}
+        </select>
+      {/each}
       <button onclick={startRun} disabled={!selectedRegion || starting}>
         Run pipeline
       </button>

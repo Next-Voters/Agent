@@ -62,7 +62,7 @@ The FastAPI app (`api/app.py`) serves a single-page portal (`api/static/index.ht
 |---|---|
 | `GET /` | Portal page (region picker, run status strip, per-city report sections; polls every 5s) |
 | `GET /static/*` | Static assets (built Svelte bundle under `static/dist/`) |
-| `GET /api/regions` | Supported regions from Supabase; 502 if Supabase unreachable |
+| `GET /api/regions` | Supported regions from Supabase, grouped by `type` (e.g. `country`, `city`); 502 if Supabase unreachable |
 | `POST /api/runs` `{"region": ...}` | Start a run — 202 accepted, 400 unknown region, 409 region already queued/running |
 | `GET /api/runs` | Ephemeral per-region statuses (`queued | running | failed`) — no history, no results |
 | `GET /api/reports` | Saved reports from the Supabase `reports` table, newest first |

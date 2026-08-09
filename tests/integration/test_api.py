@@ -144,10 +144,15 @@ client = TestClient(app)
 
 class TestRegionsEndpoint:
     def test_returns_regions(self):
-        with patch(_GET_REGIONS, return_value=["ottawa", "toronto"]):
+        with patch(
+            _GET_REGIONS,
+            return_value={"city": ["ottawa", "toronto"], "country": ["canada"]},
+        ):
             res = client.get("/api/regions")
         assert res.status_code == 200
-        assert res.json() == {"regions": ["ottawa", "toronto"]}
+        assert res.json() == {
+            "regions": {"city": ["ottawa", "toronto"], "country": ["canada"]}
+        }
 
     def test_supabase_error_returns_502(self):
         with patch(_GET_REGIONS, side_effect=Exception("DB down")):
@@ -158,7 +163,7 @@ class TestRegionsEndpoint:
 class TestCreateRunEndpoint:
     def test_valid_region_returns_202(self):
         with (
-            patch(_GET_REGIONS, return_value=["toronto"]),
+            patch(_GET_REGIONS, return_value={"city": ["toronto"]}),
             patch.object(runs._EXECUTOR, "submit") as mock_submit,
         ):
             res = client.post("/api/runs", json={"region": "toronto"})
@@ -170,7 +175,7 @@ class TestCreateRunEndpoint:
         mock_submit.assert_called_once()
 
     def test_unknown_region_returns_400(self):
-        with patch(_GET_REGIONS, return_value=["toronto"]):
+        with patch(_GET_REGIONS, return_value={"city": ["toronto"]}):
             res = client.post("/api/runs", json={"region": "nonexistent-city"})
         assert res.status_code == 400
 
@@ -181,14 +186,14 @@ class TestCreateRunEndpoint:
 
     def test_duplicate_active_region_returns_409(self):
         _register_status("toronto", status="running")
-        with patch(_GET_REGIONS, return_value=["toronto"]):
+        with patch(_GET_REGIONS, return_value={"city": ["toronto"]}):
             res = client.post("/api/runs", json={"region": "toronto"})
         assert res.status_code == 409
 
     def test_failed_region_can_run_again(self):
         _register_status("toronto", status="failed")
         with (
-            patch(_GET_REGIONS, return_value=["toronto"]),
+            patch(_GET_REGIONS, return_value={"city": ["toronto"]}),
             patch.object(runs._EXECUTOR, "submit"),
         ):
             res = client.post("/api/runs", json={"region": "toronto"})

@@ -34,8 +34,8 @@ class RunRequest(BaseModel):
     region: str
 
 
-def _fetch_supported_regions() -> list[str]:
-    """Load supported regions from Supabase, mapping failure to a 502."""
+def _fetch_supported_regions() -> dict[str, list[str]]:
+    """Load supported regions grouped by type from Supabase, mapping failure to a 502."""
     from utils.supabase_client import get_supported_regions_from_db
 
     try:
@@ -55,7 +55,7 @@ def index() -> FileResponse:
 
 @app.get("/api/regions")
 def get_regions() -> dict:
-    """List supported regions."""
+    """List supported regions grouped by type (e.g. country, city)."""
     return {"regions": _fetch_supported_regions()}
 
 
@@ -68,7 +68,8 @@ def create_run(request: RunRequest) -> dict:
     """
     region = request.region
     supported_regions = _fetch_supported_regions()
-    if region not in supported_regions:
+    known_regions = {r for regions in supported_regions.values() for r in regions}
+    if region not in known_regions:
         raise HTTPException(
             status_code=400,
             detail=f"Region '{region}' not in supported regions",

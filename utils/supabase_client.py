@@ -2,7 +2,7 @@
 Supabase client utilities for Next Voters Local pipeline.
 
 This module provides functions to query Supabase for:
-- Supported regions (from regions table)
+- Supported regions, grouped by type (from supported_regions table)
 - Supported topics (from supported_topics table)
 """
 
@@ -47,12 +47,16 @@ def get_supabase_client() -> Client:
     return create_client(supabase_url, supabase_key)
 
 
-def get_supported_regions_from_db() -> list[str]:
+def get_supported_regions_from_db() -> dict[str, list[str]]:
     """
-    Query the regions table from Supabase.
+    Query the supported_regions table from Supabase, grouped by region type.
+
+    Each region has a `type` foreign key into `region_type` (e.g. "country",
+    "city"); grouping here lets callers render one picker per type.
 
     Returns:
-        List of region names sorted alphabetically
+        Dict mapping region type to a list of region names, each list
+        sorted alphabetically.
 
     Raises:
         ValueError: If Supabase credentials are missing
@@ -63,15 +67,24 @@ def get_supported_regions_from_db() -> list[str]:
 
         logger.info("Querying supported regions from Supabase...")
         response = (
-            client.table("supported_regions").select("region").order("region").execute()
+            client.table("supported_regions")
+            .select("region, type")
+            .order("region")
+            .execute()
         )
 
-        regions = [row["region"] for row in response.data]
+        regions_by_type: dict[str, list[str]] = {}
+        for row in response.data:
+            regions_by_type.setdefault(row["type"], []).append(row["region"])
+
         logger.info(
-            f"Successfully retrieved {len(regions)} supported regions: {regions}"
+            "Successfully retrieved %d supported regions across %d types: %s",
+            sum(len(regions) for regions in regions_by_type.values()),
+            len(regions_by_type),
+            regions_by_type,
         )
 
-        return regions
+        return regions_by_type
 
     except ValueError as e:
         logger.error(f"Supabase configuration error: {e}")
