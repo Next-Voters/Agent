@@ -1,9 +1,10 @@
 """Lead researcher — supervisor agent that orchestrates researchers.
 
 The lead researcher:
-1. Identifies specific issues within a topic to investigate
-2. Calls researcher_agent_tool for each issue (isolated context per call)
-3. Produces a render-ready publication state as LeadResearcherOutput (enforced by response_format)
+1. Scouts recent activity via scout_search (headlines/snippets only)
+2. Identifies timely subtopics within its topic to investigate
+3. Calls researcher_agent_tool for each subtopic (isolated context per call)
+4. Produces a render-ready publication state as LeadResearcherOutput (enforced by response_format)
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from config.constants import MAX_RESEARCHER_INVOCATIONS
 from config.system_prompts import lead_researcher_sys_prompt
 from tools.region_details import region_details_tool
 from tools.researcher_agent_tool import researcher_agent_tool
+from tools.scout_search import scout_search
 from utils.llm import get_llm
 from utils.schemas import LeadResearcherOutput, LeadResearcherState
 
@@ -50,7 +52,7 @@ def build_lead_researcher_agent(state: dict):
     """
     return create_agent(
         model=get_llm(),
-        tools=[region_details_tool, researcher_agent_tool],
+        tools=[region_details_tool, scout_search, researcher_agent_tool],
         system_prompt=_lead_researcher_system_prompt(state),
         state_schema=LeadResearcherState,
         response_format=LeadResearcherOutput,

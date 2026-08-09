@@ -39,8 +39,8 @@ async def invoke_lead_researcher_agent(
                 HumanMessage(
                     content=(
                         f"Research {topic} legislation for {city}. "
-                        f"Identify specific issues within this topic, dispatch "
-                        f"researchers for each, then synthesize findings."
+                        f"Scout today's activity, identify timely subtopics, "
+                        f"dispatch researchers for each, then synthesize findings."
                     )
                 )
             ],

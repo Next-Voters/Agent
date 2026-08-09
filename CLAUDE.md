@@ -92,7 +92,7 @@ run_agent_team → note_taker → summary_writer
 
 **Agents** (`agents/`):
 - `researcher_agent.py`: ReAct subagent for issue-level legislation discovery, built with `create_agent` from `langchain.agents`. Terminates via `handoff` tool which writes summary to state and exits the graph.
-- `lead_researcher_agent.py`: Supervisor agent that dispatches researchers per issue, validates sources, and synthesizes findings
+- `lead_researcher_agent.py`: Supervisor agent that scouts the day's activity via `scout_search`, hands off timely subtopics to researchers, validates sources, and synthesizes findings
 
 **Pipeline Nodes** (`pipelines/node/`):
 - `run_agent_team.py`: Orchestrates lead researcher agents per topic, collects sources with compressed content, populates `legislation_content`
@@ -113,6 +113,7 @@ run_agent_team → note_taker → summary_writer
 
 **Tools** (`tools/` — root level):
 - `web_search.py`: Web search + content retrieval tool — searches via Tavily, fetches full page content via Tavily Extract, compresses via static self-information scoring, returns compressed content to the researcher agent
+- `scout_search.py`: Shallow recency search (headlines + snippets, last week, no extraction) used by the lead researcher to discover timely subtopics before dispatching researchers
 - `reflection.py`: Reflection tool for agent self-evaluation during ReAct loops
 - `notes.py`: `note_taker` (records notes as SystemMessage with slug ID) and `delete_note` (removes via RemoveMessage)
 - `handoff.py`: Researcher's exit tool — writes summary + sources to state and terminates the graph via `goto=END`
