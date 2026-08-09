@@ -6,9 +6,10 @@ At a glance, a run looks like:
 
 ```
 Browser (portal at /) → FastAPI server (api/)
-  → run queued in the in-memory registry → executed on a background worker thread
+  → run queued (ephemeral in-flight status) → executed on a background worker thread
   → LangGraph agent team researches legislation (all topics for the region)
-  → writes report to Supabase → portal polls status and renders the results
+  → writes report to Supabase (reports + report_headers)
+  → portal lists reports from Supabase; clicking one renders the inner-joined headers
 ```
 
 For the highest-level project overview and conventions, see the repository [`CLAUDE.md`](../CLAUDE.md).

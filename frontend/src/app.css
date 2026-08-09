@@ -1,0 +1,122 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --text: #1a202c;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --queued: #b45309;
+  --running: #2563eb;
+  --failed: #b91c1c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.25rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.card h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+
+select,
+button {
+  font: inherit;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+select {
+  background: var(--card);
+  color: var(--text);
+  min-width: 200px;
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message {
+  font-size: 0.9rem;
+  color: var(--muted);
+  min-height: 1.2em;
+  margin-top: 0.5rem;
+}
+
+.message.error {
+  color: var(--failed);
+}
+
+.status {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.status.queued {
+  background: var(--queued);
+}
+
+.status.running {
+  background: var(--running);
+}
+
+.status.failed {
+  background: var(--failed);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.92rem;
+  padding: 0.5rem 0;
+}
+
+.error-box {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--failed);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}

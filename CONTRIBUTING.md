@@ -1,6 +1,6 @@
 # Contributing
 
-This project is a small Python codebase: a FastAPI web portal that triggers a multi-agent research pipeline.
+This project is a small Python codebase: a FastAPI web portal that triggers a multi-agent research pipeline. The portal UI is a Svelte 5 app in `frontend/`, built with Vite into `api/static/dist/` (the built output is committed, so running the server never requires Node).
 
 ## Development Setup
 
@@ -35,6 +35,19 @@ Or build and run the container image:
 docker build -f docker/Dockerfile -t nv-local .
 docker run -p 8000:8000 --env-file .env nv-local
 ```
+
+## Frontend (Svelte)
+
+The portal UI lives in `frontend/` (Svelte 5 + Vite). Node is only needed when changing the UI:
+
+```bash
+cd frontend
+npm install
+npm run dev     # dev server with /api proxied to localhost:8000
+npm run build   # compile into api/static/dist/ — commit the result
+```
+
+Always run `npm run build` and commit the updated `api/static/dist/` alongside your `frontend/` changes.
 
 ## Testing
 

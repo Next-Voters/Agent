@@ -60,13 +60,15 @@ The FastAPI app (`api/app.py`) serves a single-page portal (`api/static/index.ht
 
 | Method/Path | Behavior |
 |---|---|
-| `GET /` | Portal page (region picker, run table, report viewer; polls every 5s) |
+| `GET /` | Portal page (region picker, run status strip, per-city report sections; polls every 5s) |
+| `GET /static/*` | Static assets (built Svelte bundle under `static/dist/`) |
 | `GET /api/regions` | Supported regions from Supabase; 502 if Supabase unreachable |
 | `POST /api/runs` `{"region": ...}` | Start a run — 202 accepted, 400 unknown region, 409 region already queued/running |
-| `GET /api/runs` | Run summaries, newest first (no result payloads) |
-| `GET /api/runs/{id}` | Full run including serialized topic results |
+| `GET /api/runs` | Ephemeral per-region statuses (`queued | running | failed`) — no history, no results |
+| `GET /api/reports` | Saved reports from the Supabase `reports` table, newest first |
+| `GET /api/reports/{id}` | One report with `report_headers` inner-joined, grouped by topic name |
 
-Run tracking (`api/runs.py`) is an **in-memory registry** (`Run` dataclass; statuses `queued | running | succeeded | failed`). History is lost on server restart; finished reports persist in Supabase.
+**Runs are NOT stored locally.** `api/runs.py` keeps only ephemeral per-region status: an entry exists while a run is queued/running (dedupe + progress), a failed entry persists until the region is re-run (so the portal can show the error), and successful runs are dropped — the saved report in Supabase is the durable record, served via `utils/report/reader.py`.
 
 **Critical constraint**: `pipelines/node/run_agent_team.py` calls `asyncio.run(...)` inside a sync `RunnableLambda`, which crashes if invoked from a thread with a running event loop. Therefore:
 - All FastAPI routes are plain `def` (executed in the threadpool), never `async def`
@@ -87,8 +89,14 @@ run_agent_team → note_taker → summary_writer
 
 **Web/API** (`api/`):
 - `app.py`: FastAPI app + routes (all sync `def`)
-- `runs.py`: In-memory run registry + background executor; `execute_run()` invokes the chain, saves per-topic reports, and records status/failures/report_id/serialized results
-- `static/index.html`: Portal page (vanilla JS, polls the API)
+- `runs.py`: Background executor + ephemeral in-flight status map; `execute_run()` invokes the chain and saves per-topic reports to Supabase (no local result storage)
+- `static/dist/`: Built Svelte portal (committed output of `frontend/`; do not edit by hand)
+
+**Frontend** (`frontend/` — Svelte 5 + Vite):
+- `src/App.svelte`: Root component — all UI state (regions, run statuses, reports, active report) via runes; groups reports into one section per city (`regionSections` derived state); polls the API every 5s
+- `src/lib/StatusStrip.svelte`, `src/lib/RegionSection.svelte`, `src/lib/ReportDetail.svelte`: Presentational components; report detail expands inline on click within its city section
+- `npm run build` (in `frontend/`) compiles into `api/static/dist/` — **the built output is committed**, so the Python server and Docker image never need Node. Rebuild and commit `api/static/dist` whenever `frontend/` changes.
+- `npm run dev` runs the Vite dev server with `/api` proxied to `localhost:8000`
 
 **Agents** (`agents/`):
 - `researcher_agent.py`: ReAct subagent for issue-level legislation discovery, built with `create_agent` from `langchain.agents`. Terminates via `handoff` tool which writes summary to state and exits the graph.
@@ -106,6 +114,7 @@ run_agent_team → note_taker → summary_writer
   - `pydantic.py`: Structured output schemas (e.g., `WriterOutput`)
 - `report/`:
   - `storage.py`: Saves pipeline output to Supabase via a two-table upsert: parent `reports` row (per region+date) and child `report_headers` rows (per legislation item with topic, header, and bullets). Returns the `report_id` on success. Single function: `save_report(region, topic_name, result) → int | None`
+  - `reader.py`: Serves saved reports back to the portal — `list_reports()` and `get_report(id)` (reports inner-joined with `report_headers`, grouped by topic name, legacy citation markers stripped on read)
 - `content/`: Content processing and evaluation utilities
   - `compressor.py`: Context compression via `compress_text(text, rate, query)`. Uses blended self-information token pruning with head-truncation fallback. Called by `web_search` to compress extracted page content inline. Short content (<`MIN_CHARS_TO_COMPRESS` chars) bypasses compression.
   - `source_reliability.py`: Domain-level source reliability scoring and filtering — classifies URLs into government, legislative, news, other, or blocked tiers.
@@ -133,7 +142,7 @@ run_agent_team → note_taker → summary_writer
 3. **Note Taker**: LLM summarizes all compressed content blocks into dense notes
 4. **Summary Writer**: LLM extracts structured data (header + bullets per item) → `WriterOutput`
 5. **Report Storage**: Upserts parent `reports` row (region+date), then `report_headers` rows (one per legislation item with topic, header, bullets). Returns `report_id`.
-6. **Status + Results**: The run record is updated (`succeeded`/`failed`, failures, report_id, serialized topic results); the portal polls `GET /api/runs/{id}` and renders the report.
+6. **Display**: The portal polls `GET /api/reports` — the new report appears in the list when saved, and clicking it renders `GET /api/reports/{id}` (headers grouped by topic, straight from Supabase). Failures surface via the `GET /api/runs` status strip.
 
 ### Key Design Decisions
 
@@ -247,7 +256,7 @@ docker run -p 8000:8000 --env-file .env nv-local
 ## Important Known Issues / WIP
 
 - Tavily Extract can fail on some domains (access restrictions, JS-heavy SPAs); when extraction fails for a URL, `web_search` returns an empty content string and the researcher works from search snippets only
-- Run history is in-memory only — a server restart clears the run list (reports remain in Supabase), and a run in flight during shutdown is lost
+- Run status is ephemeral and in-memory — a server restart clears in-flight/failed statuses (reports remain in Supabase and re-appear in the portal), and a run in flight during shutdown is lost
 
 ## Common Development Tasks
 

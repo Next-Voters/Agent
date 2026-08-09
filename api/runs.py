@@ -1,8 +1,14 @@
-"""In-memory pipeline run registry and background executor.
+"""Background pipeline execution with in-flight status tracking only.
 
-Runs are tracked in process memory only — history is lost on server
-restart (finished reports still persist in Supabase). The pipeline
-executes on a dedicated single-worker thread pool so that:
+Runs are NOT stored locally — finished reports live in Supabase and are
+served from there (see ``utils/report/reader.py``). This module keeps
+only ephemeral per-region status: an entry exists while a run is queued
+or running (used to deduplicate triggers and show progress), and a
+failed entry sticks around until the region is run again so the portal
+can surface the error. Successful runs are dropped from memory — the
+saved report is the durable record.
+
+The pipeline executes on a dedicated single-worker thread pool so that:
 
 - runs are serialized (one pipeline at a time, avoiding LLM rate-limit
   contention), with queued runs waiting FIFO, and
@@ -16,7 +22,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
 
 from utils.logger import get_logger
 
@@ -26,29 +31,22 @@ ACTIVE_STATUSES = ("queued", "running")
 
 
 @dataclass
-class Run:
-    """A single pipeline run tracked in the in-memory registry."""
+class RunStatus:
+    """Ephemeral status of the latest run for one region."""
 
-    id: str
     region: str
-    status: str  # queued | running | succeeded | failed
+    status: str  # queued | running | failed
     created_at: str
     started_at: str | None = None
-    finished_at: str | None = None
     error: str | None = None
     failures: list[str] = field(default_factory=list)
-    report_id: int | None = None
-    result: dict[str, Any] | None = None
 
-    def to_dict(self, include_result: bool = True) -> dict[str, Any]:
-        """Serialize the run to a plain dict for JSON responses."""
-        data = asdict(self)
-        if not include_result:
-            data.pop("result")
-        return data
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the status to a plain dict for JSON responses."""
+        return asdict(self)
 
 
-_RUNS: dict[str, Run] = {}
+_STATUSES: dict[str, RunStatus] = {}
 _LOCK = threading.Lock()
 _EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
@@ -58,107 +56,73 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def list_runs() -> list[Run]:
-    """Return all registered runs, newest first."""
+def run_statuses() -> list[RunStatus]:
+    """Return current per-region run statuses (queued/running/failed)."""
     with _LOCK:
-        return sorted(_RUNS.values(), key=lambda r: r.created_at, reverse=True)
-
-
-def get_run(run_id: str) -> Run | None:
-    """Return the run with the given id, or None if unknown."""
-    with _LOCK:
-        return _RUNS.get(run_id)
+        return sorted(_STATUSES.values(), key=lambda s: s.created_at, reverse=True)
 
 
 def region_is_active(region: str) -> bool:
     """Return True if the region already has a queued or running run."""
     with _LOCK:
-        return any(
-            run.region == region and run.status in ACTIVE_STATUSES
-            for run in _RUNS.values()
-        )
+        status = _STATUSES.get(region)
+        return status is not None and status.status in ACTIVE_STATUSES
 
 
-def start_run(region: str) -> Run:
-    """Register a new run for the region and submit it to the executor."""
-    run = Run(
-        id=uuid4().hex[:12],
-        region=region,
-        status="queued",
-        created_at=_utc_now(),
-    )
+def start_run(region: str) -> RunStatus:
+    """Register the region as queued and submit it to the executor."""
+    status = RunStatus(region=region, status="queued", created_at=_utc_now())
     with _LOCK:
-        _RUNS[run.id] = run
-    _EXECUTOR.submit(execute_run, run.id, region)
-    return run
+        _STATUSES[region] = status
+    _EXECUTOR.submit(execute_run, region)
+    return status
 
 
-def execute_run(run_id: str, region: str) -> None:
-    """Run the full pipeline for a region and record the outcome.
+def execute_run(region: str) -> None:
+    """Run the full pipeline for a region and save reports to Supabase.
 
-    Invokes the chain (all topics), saves each topic's report to
-    Supabase, and updates the registry entry with status, failures,
-    report id, and the serialized topic results.
+    On success the region's status entry is removed (the saved report is
+    the durable record); on failure the entry is marked ``failed`` with
+    the error detail and kept until the region is run again.
     """
     from pipelines.nv_local import chain
     from utils.report.storage import save_report
 
-    run = get_run(run_id)
-    if run is None:
-        logger.error(f"Unknown run id: {run_id}")
+    with _LOCK:
+        status = _STATUSES.get(region)
+    if status is None:
+        logger.error(f"No status entry for region: {region}")
         return
 
-    run.status = "running"
-    run.started_at = _utc_now()
+    status.status = "running"
+    status.started_at = _utc_now()
     logger.info(f"Running pipeline for region={region} (all topics)")
 
     try:
         result = chain.invoke({"region": region})
     except Exception as e:
         logger.error(f"Pipeline failed for {region}: {e}")
-        run.status = "failed"
-        run.error = str(e)
-        run.finished_at = _utc_now()
+        status.status = "failed"
+        status.error = str(e)
         return
 
-    topic_results = result.get("topic_results", {})
-    for topic, topic_data in topic_results.items():
+    for topic, topic_data in result.get("topic_results", {}).items():
         label = f"{region} ({topic})"
         try:
             rid = save_report(region, topic, topic_data)
             if rid is None:
                 logger.error(f"Failed to save report: {label}")
-                run.failures.append(label)
+                status.failures.append(label)
             else:
-                run.report_id = rid
                 logger.info(f"Completed: {label} (report_id={rid})")
         except Exception as e:
             logger.error(f"Failed to save report: {label} — {e}")
-            run.failures.append(label)
+            status.failures.append(label)
 
-    run.result = _serialize_topic_results(topic_results)
-    if run.failures:
-        logger.error(f"Pipeline failures: {run.failures}")
-        run.status = "failed"
-    else:
-        run.status = "succeeded"
-    run.finished_at = _utc_now()
+    if status.failures:
+        logger.error(f"Pipeline failures: {status.failures}")
+        status.status = "failed"
+        return
 
-
-def _serialize_topic_results(topic_results: dict[str, Any]) -> dict[str, Any]:
-    """Convert topic results into a JSON-serializable dict.
-
-    ``legislation_summary`` may be a ``WriterOutput`` model or a plain
-    dict depending on the caller; both are handled.
-    """
-    serialized: dict[str, Any] = {}
-    for topic, topic_data in topic_results.items():
-        summary = topic_data.get("legislation_summary")
-        if summary is not None and hasattr(summary, "model_dump"):
-            summary = summary.model_dump()
-        serialized[topic] = {
-            "topic_description": topic_data.get("topic_description", ""),
-            "legislation_summary": summary,
-            "legislation_sources": topic_data.get("legislation_sources", []),
-        }
-    return serialized
+    with _LOCK:
+        _STATUSES.pop(region, None)

@@ -1,6 +1,22 @@
 """Shared Pydantic models used to structure LLM responses."""
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+# Inline citation markers like [2], [1][3], [1-3], or [1, 2] — the writer
+# prompt forbids them, but the model occasionally emits them anyway.
+_CITATION_MARKERS = re.compile(r"\s*\[\d+(?:\s*[-–,]\s*\d+)*\]")
+
+
+def strip_citation_markers(text: str) -> str:
+    """Remove inline bracketed citation markers from display text.
+
+    Attribution lives in the structured ``cited_sources`` field; markers
+    like ``[2]`` must never reach report headers or bullets.
+    """
+    cleaned = _CITATION_MARKERS.sub("", text)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
 class ReflectionEntry(BaseModel):
@@ -33,6 +49,18 @@ class LegislationItem(BaseModel):
         default_factory=list,
         description="List of source numbers (from the SOURCES list) cited by this item's bullets",
     )
+
+    @field_validator("header", mode="after")
+    @classmethod
+    def _strip_header_markers(cls, value: str) -> str:
+        """Enforce marker-free headers regardless of what the LLM emits."""
+        return strip_citation_markers(value)
+
+    @field_validator("bullets", mode="after")
+    @classmethod
+    def _strip_bullet_markers(cls, value: list[str]) -> list[str]:
+        """Enforce marker-free bullets regardless of what the LLM emits."""
+        return [strip_citation_markers(bullet) for bullet in value]
 
 
 class WriterOutput(BaseModel):

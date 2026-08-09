@@ -1,5 +1,9 @@
 """FastAPI application: JSON API + built-in HTML portal.
 
+Reports are served from Supabase (reports inner-joined with
+report_headers); the server keeps no local run history — only ephemeral
+in-flight status in ``api.runs``.
+
 All routes are plain ``def`` (not ``async def``) so FastAPI executes
 them in its threadpool — blocking Supabase calls never run on the event
 loop, and the pipeline itself runs on the dedicated worker thread in
@@ -10,6 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from api import runs
@@ -20,6 +25,7 @@ logger = get_logger(__name__)
 app = FastAPI(title="Next Voters Agent")
 
 _STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 
 class RunRequest(BaseModel):
@@ -43,8 +49,8 @@ def _fetch_supported_regions() -> list[str]:
 
 @app.get("/")
 def index() -> FileResponse:
-    """Serve the portal page."""
-    return FileResponse(_STATIC_DIR / "index.html")
+    """Serve the portal page (built Svelte app from frontend/)."""
+    return FileResponse(_STATIC_DIR / "dist" / "index.html")
 
 
 @app.get("/api/regions")
@@ -72,20 +78,51 @@ def create_run(request: RunRequest) -> dict:
             status_code=409,
             detail=f"A run for region '{region}' is already queued or running",
         )
-    run = runs.start_run(region)
-    return run.to_dict(include_result=False)
+    return runs.start_run(region).to_dict()
 
 
 @app.get("/api/runs")
 def get_runs() -> dict:
-    """List all runs (newest first), without result payloads."""
-    return {"runs": [run.to_dict(include_result=False) for run in runs.list_runs()]}
+    """Current per-region run statuses (queued/running/failed only)."""
+    return {"runs": [status.to_dict() for status in runs.run_statuses()]}
 
 
-@app.get("/api/runs/{run_id}")
-def get_run(run_id: str) -> dict:
-    """Fetch a single run, including its result when finished."""
-    run = runs.get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"Unknown run id: {run_id}")
-    return run.to_dict()
+@app.get("/api/reports")
+def get_reports() -> dict:
+    """List saved reports from Supabase, newest first."""
+    from utils.report.reader import list_reports
+
+    try:
+        return {"reports": list_reports()}
+    except Exception as e:
+        logger.error(f"Failed to list reports: {e}")
+        raise HTTPException(status_code=502, detail="Failed to load reports") from e
+
+
+@app.get("/api/reports/{report_id}")
+def get_report(report_id: int) -> dict:
+    """Fetch one report with its headers grouped by topic."""
+    from utils.report.reader import get_report as read_report
+
+    try:
+        report = read_report(report_id)
+    except Exception as e:
+        logger.error(f"Failed to load report {report_id}: {e}")
+        raise HTTPException(status_code=502, detail="Failed to load report") from e
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Unknown report id: {report_id}")
+    return report
+
+
+@app.delete("/api/reports/{report_id}", status_code=204)
+def delete_report(report_id: int) -> None:
+    """Delete a saved report and its headers."""
+    from utils.report.storage import delete_report as remove_report
+
+    try:
+        deleted = remove_report(report_id)
+    except Exception as e:
+        logger.error(f"Failed to delete report {report_id}: {e}")
+        raise HTTPException(status_code=502, detail="Failed to delete report") from e
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Unknown report id: {report_id}")

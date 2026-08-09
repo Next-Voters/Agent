@@ -139,3 +139,28 @@ def save_report(region: str, topic_name: str, result: dict[str, Any]) -> int | N
     except Exception as e:
         logger.error(f"Failed to save report {region}/{topic_name}: {e}")
         return None
+
+
+def delete_report(report_id: int) -> bool:
+    """Delete a saved report and its headers.
+
+    Removes ``report_headers`` rows before the parent ``reports`` row so
+    the delete succeeds regardless of whether a cascade FK is configured.
+
+    Args:
+        report_id: The reports table primary key.
+
+    Returns:
+        True if a report row was deleted, False if it did not exist or
+        the delete failed.
+    """
+    try:
+        client = get_supabase_client()
+        client.table("report_headers").delete().eq("report_id", report_id).execute()
+        response = (
+            client.table("reports").delete().eq("id", report_id).execute()
+        )
+        return bool(response.data)
+    except Exception as e:
+        logger.error(f"Failed to delete report {report_id}: {e}")
+        return False

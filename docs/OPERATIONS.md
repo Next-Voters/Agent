@@ -40,8 +40,9 @@ Then open `http://localhost:8000` for the portal, or use the API directly:
 | `GET /` | Portal page |
 | `GET /api/regions` | List supported regions (from Supabase) |
 | `POST /api/runs` `{"region": ...}` | Start a run — `202` accepted, `400` unknown region, `409` region already queued/running, `502` Supabase unreachable |
-| `GET /api/runs` | List runs, newest first (no result payloads) |
-| `GET /api/runs/{id}` | Full run detail including results when finished |
+| `GET /api/runs` | Ephemeral per-region run statuses (queued/running/failed) |
+| `GET /api/reports` | Saved reports from Supabase, newest first |
+| `GET /api/reports/{id}` | One report with headers inner-joined, grouped by topic |
 
 ### Container
 
@@ -52,10 +53,10 @@ docker run -p 8000:8000 --env-file .env nv-local
 
 ### Run Lifecycle
 
-- Runs are tracked in an **in-memory registry** — history is lost on server restart (finished reports still persist in Supabase).
+- **Runs are not stored locally.** Reports are read back from Supabase (`reports` inner-joined with `report_headers`); the server keeps only ephemeral per-region status while a run is queued/running, plus the last failure per region until it is re-run.
 - Runs execute **one at a time** on a background worker thread; additional runs queue FIFO. A second request for a region that is already queued/running is rejected with `409`.
 - A run in flight when the server shuts down is lost; re-trigger it after restart.
-- Statuses: `queued` → `running` → `succeeded` or `failed`. Failed runs carry an `error` (pipeline exception) and/or `failures` (per-topic save failures) in the run record.
+- On success the status entry disappears and the report appears in `GET /api/reports`. On failure the status carries an `error` (pipeline exception) and/or `failures` (per-topic save failures).
 
 ## Logging And Monitoring
 
@@ -91,10 +92,9 @@ Symptoms: empty legislation sources or empty content blocks.
 
 ### Investigating A Failed Run
 
-`GET /api/runs/{id}` returns the failure detail:
+`GET /api/runs` returns the failure detail for the region (kept until the region is re-run):
 
 - `error`: the pipeline exception, if the chain itself failed
 - `failures`: labels of topics whose reports failed to save (e.g., `"toronto (housing)"`)
-- `report_id`: non-null if at least one topic saved (report exists in DB but may be incomplete)
 
-Cross-reference with server logs, then check `report_headers` in Supabase for partial data.
+Cross-reference with server logs, then check `reports`/`report_headers` in Supabase for partial data (a report may exist with only some topics saved).

@@ -7,3 +7,6 @@ email_failures.json
 
 # OS noise
 .DS_Store
+
+# Frontend toolchain (built output in api/static/dist IS committed)
+frontend/node_modules/
