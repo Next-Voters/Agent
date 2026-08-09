@@ -10,5 +10,3 @@ email_failures.json
 
 # Frontend toolchain (built output in api/static/dist IS committed)
 frontend/node_modules/
-# Vercel-only build output (`npm run build:vercel`); the FastAPI-served bundle stays in api/static/dist
-frontend/dist/

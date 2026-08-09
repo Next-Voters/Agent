@@ -1,3 +1,32 @@
+[project]
+name = "nv-agent"
+version = "0.1.0"
+description = "Next Voters Agent: multi-agent research pipeline and portal for municipal legislation"
+requires-python = ">=3.11"
+# Keep in sync with requirements.txt (the install source for Docker, CI, and local dev);
+# this table is what Vercel's uv-based Python builder installs from.
+dependencies = [
+    "langchain>=1.3,<2",
+    "langgraph>=1.2,<2",
+    "langchain-openai",
+    "python-dotenv",
+    "pydantic",
+    "supabase",
+    "fastapi",
+    "uvicorn[standard]",
+    "tavily-python",
+    "wordfreq>=3.1",
+]
+
+[tool.uv]
+# Dependency manifest only — never build/install the repo itself as a package.
+package = false
+
+[tool.vercel]
+# Vercel deploys the FastAPI app as a single function; the StaticFiles mount
+# (api/static, including the committed Svelte bundle) is promoted to the CDN.
+entrypoint = "api.app:app"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 88
