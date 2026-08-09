@@ -27,22 +27,8 @@ COMPRESSION_RATE: float = 0.4
 MIN_CHARS_TO_COMPRESS: int = 1_000
 
 # ---------------------------------------------------------------------------
-# Token pruning (CompactPrompt blended self-information)
+# Token pruning (CompactPrompt static self-information)
 # ---------------------------------------------------------------------------
-
-# Together AI model for dynamic self-information scoring.
-TOGETHER_MODEL: str = "openai/gpt-oss-20b"
-
-# Timeout for the Together AI logprobs API call (seconds).
-TOGETHER_TIMEOUT: int = 60
-
-# Maximum retries for Together AI API failures.
-TOGETHER_MAX_RETRIES: int = 2
-
-# Relative difference threshold for blending static and dynamic scores.
-# When |I_dyn - I_stat| / I_stat <= this value, use arithmetic mean.
-# When > this value, use dynamic score exclusively.
-BLEND_DELTA_THRESHOLD: float = 0.1
 
 # Score multiplier for tokens appearing in the pipeline topic query.
 QUERY_BOOST_FACTOR: float = 1.5
