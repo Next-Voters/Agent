@@ -157,9 +157,7 @@ def delete_report(report_id: int) -> bool:
     try:
         client = get_supabase_client()
         client.table("report_headers").delete().eq("report_id", report_id).execute()
-        response = (
-            client.table("reports").delete().eq("id", report_id).execute()
-        )
+        response = client.table("reports").delete().eq("id", report_id).execute()
         return bool(response.data)
     except Exception as e:
         logger.error(f"Failed to delete report {report_id}: {e}")
