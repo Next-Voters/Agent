@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from langchain_core.runnables import RunnableLambda
 
+from config.constants import MAX_ITEMS_PER_TOPIC
 from config.system_prompts import writer_sys_prompt
 from utils.llm import get_structured_llm
 from utils.logger import get_logger
@@ -86,8 +87,10 @@ def research_summary_writer(inputs: ChainData) -> ChainData:
             source_urls, legislation_content, notes or ""
         )
 
-        formatted_prompt = writer_sys_prompt.replace("{topic}", topic).replace(
-            "{topic_description}", topic_description
+        formatted_prompt = (
+            writer_sys_prompt.replace("{topic}", topic)
+            .replace("{topic_description}", topic_description)
+            .replace("{max_items}", str(MAX_ITEMS_PER_TOPIC))
         )
 
         logger.info(

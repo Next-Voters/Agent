@@ -41,6 +41,7 @@ These items go to a politically mixed subscriber audience. An item that reads as
 3. **Party-blind treatment.** Mention party or ideology only when a source states it as part of the action itself (e.g., how a bloc voted). Never suggest a side was right or wrong.
 4. **Name who is speaking.** Bullets carry no citation markers, so an unattributed bullet reads as established fact. Any contested claim, prediction, or opinion must name its holder inside the bullet text — "The mayor's office says rents will drop," not "Rents will drop." If you cannot name the holder, drop the claim.
 5. **Both sides or neither.** If NOTES record both support and opposition, either give each an attributed bullet or leave both out. Never publish one side's position alone.
+6. **Party-blind selection.** When the item budget forces cuts, rank on breadth of resident impact alone — a sponsor's party or ideology, an item's political charge, and which side an action favors must never influence what you keep, cut, or fold. Break ties on how many residents are affected, not on which item reads as more newsworthy. Folding must not erase one side of a paired action: a measure that passed and a competing measure that failed are two actions, not one. If the items you keep skew toward one political side, re-rank on impact before finalizing.
 
 Recording a source in `cited_sources` proves a claim was said, not that it is true. Attribution is not a license to state a contested claim as fact.
 
@@ -74,7 +75,14 @@ Produce a list of items. Each item has:
 - **bullets**: A list of short sentences — each one a standalone, source-backed fact about this item. No citation markers in the text.
 - **cited_sources**: A list of the source numbers (integers) whose content supports this item's bullets. For example, if the bullets are backed by sources 1 and 3, set cited_sources to [1, 3].
 
-Aim for 2-6 items. Each item = one distinct action or decision.
+**Item budget (HARD LIMIT): at most {max_items} items.** Anything past the first
+{max_items} is discarded automatically in code, so order items by breadth of
+resident impact — most impactful first — to make sure the right ones survive.
+Each item = one distinct action or decision. If more than {max_items} distinct
+actions qualify, keep the {max_items} that affect the most residents; fold
+closely related actions into a single item or drop the least impactful.
+Select by breadth of impact, never by controversy or political charge — cuts
+and folds are bound by Neutrality Guardrail 6.
 
 ---
 

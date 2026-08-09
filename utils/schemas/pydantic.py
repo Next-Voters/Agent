@@ -70,3 +70,15 @@ class WriterOutput(BaseModel):
         default_factory=list,
         description="List of legislation items found for this topic",
     )
+
+    @field_validator("items", mode="after")
+    @classmethod
+    def _cap_items(cls, value: list[LegislationItem]) -> list[LegislationItem]:
+        """Enforce the per-topic item budget regardless of what the LLM emits.
+
+        The prompt asks for the most impactful items first, so truncation
+        keeps the highest-ranked ones.
+        """
+        from config.constants import MAX_ITEMS_PER_TOPIC
+
+        return value[:MAX_ITEMS_PER_TOPIC]

@@ -133,7 +133,7 @@ run_agent_team → note_taker → summary_writer
 
 **Configuration** (`config/`):
 - `system_prompts/`: Prompt templates for agents and nodes
-- `constants.py`: Pipeline-wide tuneable constants: `WEB_SEARCH_PER_URL_CHAR_CAP`, `COMPRESSION_RATE`, `MIN_CHARS_TO_COMPRESS`, `MAX_REFLECTION_ENTRIES`, `AGENT_RECURSION_LIMIT`, `MAX_RESEARCHER_INVOCATIONS`
+- `constants.py`: Pipeline-wide tuneable constants: `MAX_ITEMS_PER_TOPIC` (report item budget, enforced in prompt + `WriterOutput` validator), `WEB_SEARCH_PER_URL_CHAR_CAP`, `COMPRESSION_RATE`, `MIN_CHARS_TO_COMPRESS`, `MAX_REFLECTION_ENTRIES`, `AGENT_RECURSION_LIMIT`, `MAX_RESEARCHER_INVOCATIONS`
 
 ### Data Flow Example
 

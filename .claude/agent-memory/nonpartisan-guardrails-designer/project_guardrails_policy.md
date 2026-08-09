@@ -22,5 +22,12 @@ product — the moment briefs read as partisan, a large part of the market will 
   with attribution. Do not launder contested claims into fake-neutral prose." So guardrails
   should require attributing contested claims to a named holder — not deleting the
   disagreement or flattening it into fake-neutral phrasing.
-- Prompts are single string constants consumed by `str.format()`. Literal braces break them,
-  so guardrails text must contain no `{` or `}` beyond the prompt's real placeholders.
+- Prompts are single string constants. Agent prompts are substituted with `str.format()`
+  (`agents/researcher_agent.py`, `agents/lead_researcher_agent.py`); node prompts use chained
+  `str.replace()` on named placeholders (`pipelines/node/summary_writer.py`, `note_taker.py`).
+  Either way, guardrails text must contain no `{` or `}` beyond the prompt's real placeholders.
+- Language-side guardrails do not cover selection. Most guardrail blocks constrain *how* an
+  item is written (merit language, verbs, attribution). Any prompt surface that *ranks, caps,
+  folds, or drops* items is a separate bias vector and needs its own rule: party-blind
+  ranking, ties broken on impact rather than newsworthiness, and a check that the kept set
+  does not skew to one political side.

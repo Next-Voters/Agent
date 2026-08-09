@@ -1,6 +1,16 @@
 """Pipeline-wide configuration constants."""
 
 # ---------------------------------------------------------------------------
+# Report output
+# ---------------------------------------------------------------------------
+
+# Hard cap on legislation items per topic in a report. Enforced two ways:
+# the writer prompt budgets to this number (via the {max_items}
+# placeholder), and ``WriterOutput`` truncates any excess at parse time.
+MAX_ITEMS_PER_TOPIC: int = 3
+
+
+# ---------------------------------------------------------------------------
 # Web search — inline content extraction
 # ---------------------------------------------------------------------------
 

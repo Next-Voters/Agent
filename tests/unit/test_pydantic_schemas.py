@@ -1,6 +1,11 @@
 """Unit tests for utils/schemas/pydantic.py output validators."""
 
-from utils.schemas.pydantic import LegislationItem, strip_citation_markers
+from config.constants import MAX_ITEMS_PER_TOPIC
+from utils.schemas.pydantic import (
+    LegislationItem,
+    WriterOutput,
+    strip_citation_markers,
+)
 
 
 class TestStripCitationMarkers:
@@ -58,3 +63,25 @@ class TestLegislationItemValidation:
     def test_cited_sources_untouched(self):
         item = LegislationItem(header="h", bullets=["b.[1]"], cited_sources=[1])
         assert item.cited_sources == [1]
+
+
+class TestWriterOutputItemCap:
+    def _items(self, n):
+        return [LegislationItem(header=f"item {i}", bullets=["b"]) for i in range(n)]
+
+    def test_excess_items_truncated_keeping_first(self):
+        output = WriterOutput(items=self._items(MAX_ITEMS_PER_TOPIC + 3))
+        assert len(output.items) == MAX_ITEMS_PER_TOPIC
+        assert output.items[0].header == "item 0"
+        assert output.items[-1].header == f"item {MAX_ITEMS_PER_TOPIC - 1}"
+
+    def test_at_cap_unchanged(self):
+        output = WriterOutput(items=self._items(MAX_ITEMS_PER_TOPIC))
+        assert len(output.items) == MAX_ITEMS_PER_TOPIC
+
+    def test_under_cap_unchanged(self):
+        output = WriterOutput(items=self._items(1))
+        assert len(output.items) == 1
+
+    def test_empty_unchanged(self):
+        assert WriterOutput(items=[]).items == []
