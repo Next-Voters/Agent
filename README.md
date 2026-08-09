@@ -24,7 +24,7 @@ Many people — working families, elderly residents, anyone already stretched th
 
 ## Architecture At A Glance
 
-Next Voters is a multi-agent research pipeline behind a small web portal. A FastAPI server serves the portal and a JSON API; each run discovers legislation sources, fetches and extracts content, and produces a structured summary — all orchestrated by LangGraph-based agents on a background worker thread, with reports saved to Supabase.
+Next Voters is a multi-agent research pipeline behind a small web portal. A FastAPI server serves the portal and a JSON API; each run discovers legislation sources, fetches and extracts content, and produces a structured summary — all orchestrated by LangGraph-based agents on a background worker thread, with reports saved to and served from Supabase. The portal itself is a Svelte app (built into `api/static/dist/`) that lists reports per city and lets you drill into or delete any of them.
 
 For the full picture — agent design, database schema, and operations — see the [architecture documentation](docs/ARCHITECTURE.md).
 
@@ -37,15 +37,17 @@ cp .env.example .env   # fill in your keys
 python main.py         # serves http://localhost:8000
 ```
 
-Open `http://localhost:8000` to pick a region, start a run, and browse the finished report. The same functionality is available over the API:
+Open `http://localhost:8000` to pick a region, start a run, and browse saved reports grouped by city — delete any report you no longer need. The same functionality is available over the API:
 
 ```bash
 curl http://localhost:8000/api/regions                # list supported regions
 curl -X POST http://localhost:8000/api/runs \
      -H 'Content-Type: application/json' \
      -d '{"region": "toronto"}'                       # start a run
-curl http://localhost:8000/api/runs                   # poll run status
-curl http://localhost:8000/api/runs/<run_id>          # full run incl. results
+curl http://localhost:8000/api/runs                   # poll ephemeral run status
+curl http://localhost:8000/api/reports                # list saved reports
+curl http://localhost:8000/api/reports/<report_id>    # one report, headers by topic
+curl -X DELETE http://localhost:8000/api/reports/<report_id>  # delete a report
 ```
 
 ## Documentation
