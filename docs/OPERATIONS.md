@@ -1,12 +1,11 @@
 # Operations
 
-This document describes how NV Local is typically run in development and how it is deployed in production-like environments.
+This document describes how NV Local is run in development and in a container.
 
 ## Environments
 
-- Local dev: build and run `docker/Dockerfile` with `REGION` env var set (or run `REGION=<city> python main.py` from a virtualenv)
-- Container: build and run `docker/Dockerfile` with `REGION` env var set
-- CI/CD: GitHub Actions builds and pushes a container image to Amazon ECR
+- Local dev: `python main.py` from a virtualenv (or `uvicorn api.app:app --reload` for auto-reload)
+- Container: build and run `docker/Dockerfile`, publishing port 8000
 
 ## Configuration And Secrets
 
@@ -15,63 +14,66 @@ Core runtime secrets:
 - `OPENAI_API_KEY`: OpenAI API access
 - `TAVILY_API_KEY`: Tavily Search + Extract (web search and content retrieval)
 - `SUPABASE_URL`, `SUPABASE_KEY`: City/topic config + report storage
-- `TOGETHER_API_KEY`: Dynamic self-information scoring for context compression
 
-Container-specific:
+Server config (optional):
 
-- `REGION`: City to run pipeline for (set by Dispatcher Lambda)
-- `SQS_QUEUE_URL`: SQS queue URL for report-ready messages (triggers Email Lambda)
-- `SQS_PIPELINE_DLQ_URL`: SQS dead letter queue URL for pipeline failure metadata
+- `HOST`: bind address (default `0.0.0.0`)
+- `PORT`: listen port (default `8000`)
 
 Operational guidance:
 
-- Prefer injecting secrets via your environment (shell export, container env vars, or AWS Secrets Manager).
+- Prefer injecting secrets via your environment (shell export or container env vars).
 - `main.py` calls `dotenv.load_dotenv()`, so a `.env` file is loaded automatically.
 
-## Deployments
+## Running
 
-### Container Image Build + Push
+### Local
 
-GitHub workflow: `/.github/workflows/push-image-to-ecr.yml`
+```bash
+python main.py
+```
 
-- Trigger: pushes to `main`, or manual `workflow_dispatch`
-- Authentication: OIDC via GitHub's `id-token` permission — the workflow assumes an IAM role (`AWS_ROLE_ARN` secret) instead of storing long-lived credentials
-- Output: image pushed to Amazon ECR with two tags:
-  - `<registry>/<repository>:<git_sha>`
-  - `<registry>/<repository>:latest`
+Then open `http://localhost:8000` for the portal, or use the API directly:
 
-Required GitHub configuration:
-- **Secret**: `AWS_ROLE_ARN` — ARN of the IAM role the workflow assumes via OIDC
-- **Variables**: `AWS_REGION`, `ECR_REPOSITORY` — region and ECR repository name
+| Method/Path | Behavior |
+|---|---|
+| `GET /` | Portal page |
+| `GET /api/regions` | List supported regions (from Supabase) |
+| `POST /api/runs` `{"region": ...}` | Start a run — `202` accepted, `400` unknown region, `409` region already queued/running, `502` Supabase unreachable |
+| `GET /api/runs` | List runs, newest first (no result payloads) |
+| `GET /api/runs/{id}` | Full run detail including results when finished |
 
-### Runtime (AWS ECS Fargate)
+### Container
 
-- EventBridge Scheduler triggers a Dispatcher Lambda weekly
-- Dispatcher Lambda launches one ECS Fargate task per supported city
-- Each Fargate task runs `main.py` with `REGION` env var set
-- Reports are saved to the Supabase `reports` table
-- After all topics complete, a `{region, report_id}` message is enqueued to SQS, triggering the Email Lambda
-- If any topic or the SQS enqueue fails, failure metadata is sent to the pipeline DLQ
-- Logs are emitted to stdout/stderr and collected by CloudWatch
+```bash
+docker build -f docker/Dockerfile -t nv-local .
+docker run -p 8000:8000 --env-file .env nv-local
+```
+
+### Run Lifecycle
+
+- Runs are tracked in an **in-memory registry** — history is lost on server restart (finished reports still persist in Supabase).
+- Runs execute **one at a time** on a background worker thread; additional runs queue FIFO. A second request for a region that is already queued/running is rejected with `409`.
+- A run in flight when the server shuts down is lost; re-trigger it after restart.
+- Statuses: `queued` → `running` → `succeeded` or `failed`. Failed runs carry an `error` (pipeline exception) and/or `failures` (per-topic save failures) in the run record.
 
 ## Logging And Monitoring
 
-- Primary logs: stdout/stderr from the container
-- In production, logs are collected by CloudWatch via ECS Fargate
-- Per-topic pipeline failures are logged to stderr; the container exits 1 if any topic fails
+- Primary logs: stdout/stderr from the server process.
+- Per-topic pipeline failures are logged to stderr and recorded on the run object, visible via `GET /api/runs/{id}` and in the portal.
 
 ## Data Storage And Backups
 
 - Reports are stored in the Supabase `reports` table (upserted per region/topic).
-- Supported regions and topics are read from Supabase (`regions` and related tables).
+- Supported regions and topics are read from Supabase (`supported_regions` and related tables).
 - Backups, retention, and schema migrations are owned by the Supabase project.
 
 ## Runbooks
 
-### Job Fails Immediately
+### Run Fails Immediately
 
-1) Check logs for missing env vars (common: `OPENAI_API_KEY` or `TAVILY_API_KEY`).
-2) In container mode, verify `REGION` is set and the region exists in the `regions` table.
+1) Check server logs for missing env vars (common: `OPENAI_API_KEY` or `TAVILY_API_KEY`).
+2) A `502` from `/api/regions` or `POST /api/runs` means Supabase is unreachable or `SUPABASE_URL`/`SUPABASE_KEY` are unset.
 
 ### Tavily Search / Extract Errors
 
@@ -85,22 +87,14 @@ Symptoms: empty legislation sources or empty content blocks.
 
 1) Verify `OPENAI_API_KEY` and account quota.
 2) The agent `recursion_limit` (configured in `config/constants.py`) bounds tool-call loops to prevent runaway API usage.
-3) If rate-limited, reduce the number of cities running concurrently by adjusting the Dispatcher Lambda fan-out.
+3) Runs are already serialized (one pipeline at a time), which keeps request volume bounded.
 
-### Pipeline DLQ Messages
+### Investigating A Failed Run
 
-When a Fargate task exits 1, it sends failure metadata to the pipeline dead letter queue (`SQS_PIPELINE_DLQ_URL`). This is separate from the Email Lambda's consumption DLQ.
+`GET /api/runs/{id}` returns the failure detail:
 
-Message format:
-```json
-{
-  "region": "toronto",
-  "failures": ["toronto (housing)", "toronto (SQS enqueue)"],
-  "report_id": 42,
-  "timestamp": "2026-05-09T12:00:00+00:00"
-}
-```
+- `error`: the pipeline exception, if the chain itself failed
+- `failures`: labels of topics whose reports failed to save (e.g., `"toronto (housing)"`)
+- `report_id`: non-null if at least one topic saved (report exists in DB but may be incomplete)
 
-- `failures`: labels of failed topics or steps
-- `report_id`: non-null if at least one topic saved (report exists in DB but may be incomplete); null if all topics failed
-- To investigate: cross-reference `timestamp` with CloudWatch logs for the ECS task, then check `report_headers` in Supabase for partial data
+Cross-reference with server logs, then check `report_headers` in Supabase for partial data.

@@ -23,7 +23,7 @@ ignore = [
 "tests/**" = ["S101"]  # asserts are expected in tests
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "config", "pipelines", "tools", "utils"]
+known-first-party = ["agents", "api", "config", "pipelines", "tools", "utils"]
 
 [tool.ruff.format]
 quote-style = "double"

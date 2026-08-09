@@ -1,15 +1,14 @@
 # Architecture
 
-**Next Voters Agent** is a multi-agent AI research pipeline that discovers, researches, and summarizes municipal legislation across cities, then delivers topic-specific, cited briefs to subscribers. This document is the map; each subsystem has its own deep-dive below.
+**Next Voters Agent** is a multi-agent AI research pipeline that discovers, researches, and summarizes municipal legislation across cities, exposed through a small web portal. This document is the map; each subsystem has its own deep-dive below.
 
-At a glance, a weekly run looks like:
+At a glance, a run looks like:
 
 ```
-EventBridge → Dispatcher Lambda → ECS Fargate task (per region)
-  → LangGraph agent team researches legislation → writes report to Supabase
-  → enqueues {region, report_id} to SQS
-      → Email Lambda  (sends the brief via Mailgun)
-      → Worker Lambda (post-processes the saved report)
+Browser (portal at /) → FastAPI server (api/)
+  → run queued in the in-memory registry → executed on a background worker thread
+  → LangGraph agent team researches legislation (all topics for the region)
+  → writes report to Supabase → portal polls status and renders the results
 ```
 
 For the highest-level project overview and conventions, see the repository [`CLAUDE.md`](../CLAUDE.md).
@@ -20,13 +19,11 @@ For the highest-level project overview and conventions, see the repository [`CLA
 
 ## Infrastructure
 
-- [AWS Architecture](AWS_ARCHITECTURE.md) — the runtime deployment (EventBridge, Dispatcher/Email/Worker Lambdas, ECS Fargate, SQS queues + DLQs) and the CI/CD image-management flow across ECR repositories.
 - [Database Infrastructure](DB_INFRASTRUCTURE.md) — the Supabase schema: pipeline tables (region/topic config, subscribers, reports), platform tables, LangGraph persistence, and RLS.
 
 ## Operations
 
-- [Operations](OPERATIONS.md) — how the system is run in development and deployed in production-like environments, plus configuration and secrets handling.
-- [Email Lambda: SES → Mailgun + SSM Migration](EMAIL_LAMBDA_MAILGUN_MIGRATION.md) — handoff prompt and reference implementation for migrating the (separate-repo) Email Lambda off SES to Mailgun, with secrets fetched from SSM.
+- [Operations](OPERATIONS.md) — how the system is run in development and in a container, plus configuration and secrets handling.
 
 ## Subsystems & deep dives
 

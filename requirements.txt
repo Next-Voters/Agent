@@ -2,11 +2,9 @@ langchain>=1.3,<2
 langgraph>=1.2,<2
 langchain-openai
 python-dotenv
-httpx
 pydantic
 supabase
-boto3
+fastapi
+uvicorn[standard]
 tavily-python
-spacy>=3.7
-click>=8.0  # required at build time by `spacy download` (spacy.cli imports click directly; typer no longer pulls it transitively)
 wordfreq>=3.1

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Next Voters Agent** is a multi-agent AI research pipeline that discovers, researches, and summarizes municipal legislation across cities. It makes government information accessible to communities that lack time or resources to track local officials.
 
-The system runs as a standalone CLI tool or Docker container, orchestrated by LangGraph-based agents. Each execution researches legislation for a given region and stores structured results (headers + bullets) in Supabase.
+The system runs as a FastAPI web server (locally or in Docker) with a built-in HTML portal. Users trigger pipeline runs per region on demand; each run researches legislation for that region across all topics, orchestrated by LangGraph-based agents, and stores structured results (headers + bullets) in Supabase.
 
 ## Development Setup
 
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 - Copy `.env.example` to `.env` and set required keys
 - All entrypoints and modules that read env vars call `load_dotenv()` from `python-dotenv`, so `.env` is loaded automatically
-- **Entrypoint**: `main.py` requires the `REGION` env var set (single-region, runs all topics, validates the region against Supabase `supported_regions`, saves to the Supabase `reports` table). It exits 1 with a clear error if `REGION` is unset.
+- **Entrypoint**: `main.py` starts the FastAPI server (`api/app.py`) via uvicorn on `HOST`/`PORT` (defaults `0.0.0.0:8000`). Pipeline runs are triggered through the portal at `/` or the JSON API.
 
 ### Common Commands
 
@@ -33,20 +33,45 @@ pip install -r requirements.txt
 # Compile check (catches syntax errors early)
 python -m compileall -q .
 
-# Run the pipeline for a region (runs all topics, saves to DB).
-# Requires OPENAI_API_KEY + TAVILY_API_KEY + TOGETHER_API_KEY + SUPABASE_URL/KEY.
-REGION=<region_name> python main.py
+# Run the test suite
+pytest tests
+
+# Start the web server (portal at http://localhost:8000).
+# Requires OPENAI_API_KEY + TAVILY_API_KEY + SUPABASE_URL/KEY.
+python main.py
+
+# Dev mode with auto-reload
+uvicorn api.app:app --reload
 ```
 
-**Post-implementation verification**: After any code changes, always run `python -m compileall -q .` followed by `REGION=<region_name> python main.py` to confirm both compile-time and runtime correctness.
+**Post-implementation verification**: After any code changes, always run `python -m compileall -q .` followed by `pytest tests` to confirm both compile-time and behavioral correctness. For entrypoint/API changes, also start `python main.py` and exercise the affected endpoints.
 
 ### Testing
 
-There is no dedicated test suite. Quick validation:
+- `pytest tests` — unit tests plus integration tests for the API and run executor (`tests/integration/test_api.py`, all external I/O mocked)
 - `python -m compileall -q .` to catch syntax errors
-- Manual pipeline runs with test regions to verify data flow
+- Manual pipeline runs via the portal with test regions to verify data flow
 
 ## Architecture Overview
+
+### Web Server + Run Execution
+
+The FastAPI app (`api/app.py`) serves a single-page portal (`api/static/index.html`) and a JSON API:
+
+| Method/Path | Behavior |
+|---|---|
+| `GET /` | Portal page (region picker, run table, report viewer; polls every 5s) |
+| `GET /api/regions` | Supported regions from Supabase; 502 if Supabase unreachable |
+| `POST /api/runs` `{"region": ...}` | Start a run — 202 accepted, 400 unknown region, 409 region already queued/running |
+| `GET /api/runs` | Run summaries, newest first (no result payloads) |
+| `GET /api/runs/{id}` | Full run including serialized topic results |
+
+Run tracking (`api/runs.py`) is an **in-memory registry** (`Run` dataclass; statuses `queued | running | succeeded | failed`). History is lost on server restart; finished reports persist in Supabase.
+
+**Critical constraint**: `pipelines/node/run_agent_team.py` calls `asyncio.run(...)` inside a sync `RunnableLambda`, which crashes if invoked from a thread with a running event loop. Therefore:
+- All FastAPI routes are plain `def` (executed in the threadpool), never `async def`
+- The pipeline executes on a dedicated `ThreadPoolExecutor(max_workers=1)` — runs are serialized (one pipeline at a time, avoiding LLM rate-limit contention) and queued FIFO
+- Do not "optimize" to `async def` routes + `await chain.ainvoke()`
 
 ### Pipeline Structure
 
@@ -54,38 +79,16 @@ The pipeline is a **fixed, deterministic sequence** of nodes composed via LangGr
 
 ```
 run_agent_team → note_taker → summary_writer
-run_agent_team → note_taker → summary_writer
 ```
 
 **Key design**: Each node is a thin `RunnableSequence` that transforms pipeline state (`ChainData` TypedDict).
 
-### Deployment Model (AWS)
-
-Each region runs as an independent **ECS Fargate task**:
-- **EventBridge Scheduler** triggers weekly
-- **Dispatcher Lambda** fans out — one ECS task per region
-- Each Fargate task runs `main.py` with `REGION` env var, executing all topics sequentially
-- Reports written to **Supabase Postgres** `reports` table
-- After all topics complete, a `{region, report_id}` message is enqueued to **SQS**, triggering the **Email Lambda**
-- If any topic or the SQS enqueue fails, failure metadata is sent to the **Pipeline DLQ** before exit 1
-- **Email Lambda** (separate repo/image) reads reports and dispatches via **Mailgun** (HTTP API; Mailgun API key + Supabase creds read from SSM at runtime)
-
-### Infrastructure as Code (Terraform)
-
-All AWS resources are defined as **Terraform** in `infrastructure/` (one file per concern: `vpc.tf`, `ecr.tf`, `ecs.tf`, `lambda.tf`, `sqs.tf`, `eventbridge.tf`, `cloudwatch.tf`, `iam.tf`, `ssm.tf`, `outputs.tf`, `variables.tf`). Deploy per environment with the matching var file:
-
-```bash
-cd infrastructure
-terraform plan  -var-file=staging.tfvars     # or production.tfvars
-terraform apply -var-file=staging.tfvars
-```
-
-- **Secrets live in SSM Parameter Store**, never in `*.tf` / `*.tfvars`. `ssm.tf` creates one `SecureString` per secret under `/next-voters/<env>/<KEY>` with a placeholder value and `ignore_changes = [value]`; real values are set out-of-band (`aws ssm put-parameter --overwrite --type SecureString ...`). `ignore_changes` does **not** keep secrets out of Terraform *state* — a refresh reads the decrypted value back into `terraform.tfstate`, so enable the encrypted remote backend (stubbed in `main.tf`) before setting real values.
-- **Pipeline (ECS)** secrets are injected as env vars via the container `secrets` block — the task **execution role** fetches them from SSM at task start (no app change; they arrive as ordinary env vars).
-- **Email Lambda** (separate repo) fetches its secrets from SSM at runtime via the `*_PARAM` env vars (see `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`).
-- `tfvars` hold only non-secret config (`environment`, `mailgun_domain`, `mailgun_sender`, `share_base_url`) and are committed; `*.tfstate` and `.terraform/` are git-ignored. For shared/production use, move state to the encrypted S3 backend stubbed in `main.tf`.
-
 ### Core Components
+
+**Web/API** (`api/`):
+- `app.py`: FastAPI app + routes (all sync `def`)
+- `runs.py`: In-memory run registry + background executor; `execute_run()` invokes the chain, saves per-topic reports, and records status/failures/report_id/serialized results
+- `static/index.html`: Portal page (vanilla JS, polls the API)
 
 **Agents** (`agents/`):
 - `researcher_agent.py`: ReAct subagent for issue-level legislation discovery, built with `create_agent` from `langchain.agents`. Terminates via `handoff` tool which writes summary to state and exits the graph.
@@ -106,9 +109,10 @@ terraform apply -var-file=staging.tfvars
 - `content/`: Content processing and evaluation utilities
   - `compressor.py`: Context compression via `compress_text(text, rate, query)`. Uses blended self-information token pruning with head-truncation fallback. Called by `web_search` to compress extracted page content inline. Short content (<`MIN_CHARS_TO_COMPRESS` chars) bypasses compression.
   - `source_reliability.py`: Domain-level source reliability scoring and filtering — classifies URLs into government, legislative, news, other, or blocked tiers.
+- `supabase_client.py`: Loads supported regions and topics from Supabase
 
 **Tools** (`tools/` — root level):
-- `web_search.py`: Web search + content retrieval tool — searches via Tavily, fetches full page content via Tavily Extract, compresses via dynamic self-information scoring, returns compressed content to the researcher agent
+- `web_search.py`: Web search + content retrieval tool — searches via Tavily, fetches full page content via Tavily Extract, compresses via static self-information scoring, returns compressed content to the researcher agent
 - `reflection.py`: Reflection tool for agent self-evaluation during ReAct loops
 - `notes.py`: `note_taker` (records notes as SystemMessage with slug ID) and `delete_note` (removes via RemoveMessage)
 - `handoff.py`: Researcher's exit tool — writes summary + sources to state and terminates the graph via `goto=END`
@@ -116,8 +120,6 @@ terraform apply -var-file=staging.tfvars
 - `middleware.py`: `ReflectionMiddleware` for injecting reflection history before each LLM call
 - `_helpers.py`: `ok()`/`err()` Command builders shared by all tools
 - `services/tavily.py`, `services/extract.py`: Direct SDK wrappers for Tavily Search and Extract
-- `supabase_client.py`: Loads supported regions and topics from Supabase
-- `sqs_client.py`: SQS factory (`get_sqs_client()`) and message helpers (`enqueue_report()`, `enqueue_pipeline_failure()`)
 
 **Configuration** (`config/`):
 - `system_prompts/`: Prompt templates for agents and nodes
@@ -125,11 +127,12 @@ terraform apply -var-file=staging.tfvars
 
 ### Data Flow Example
 
-1. **Agent Team**: Lead researcher dispatches researcher subagents per issue. Each researcher uses `web_search` which searches via Tavily, fetches full page content via Tavily Extract, and compresses it via dynamic self-information scoring. The researcher reads compressed content in-context, evaluates quality, and hands off an informed summary with curated URL strings. The `web_search` tool separately pushes `{"url", "content"}` dicts to state via `operator.add`. `invoke_researcher` reconciles the curated URLs with their content dicts. `run_agent_team` collects sources, filters by reliability, and populates `legislation_content` from the content dicts.
-2. **Note Taker**: LLM summarizes all compressed content blocks into dense notes
-3. **Summary Writer**: LLM extracts structured data (header + bullets per item) → `WriterOutput`
-4. **Report Storage** (container mode): Upserts parent `reports` row (region+date), then `report_headers` rows (one per legislation item with topic, header, bullets). Returns `report_id`.
-5. **SQS Notification** (container mode): Enqueues `{region, report_id}` to SQS so the Email Lambda can send the report. If any step failed, sends failure metadata to the Pipeline DLQ.
+1. **Trigger**: User picks a region in the portal (or `POST /api/runs`); the run is queued and picked up by the background worker thread.
+2. **Agent Team**: Lead researcher dispatches researcher subagents per issue. Each researcher uses `web_search` which searches via Tavily, fetches full page content via Tavily Extract, and compresses it via static self-information scoring. The researcher reads compressed content in-context, evaluates quality, and hands off an informed summary with curated URL strings. The `web_search` tool separately pushes `{"url", "content"}` dicts to state via `operator.add`. `invoke_researcher` reconciles the curated URLs with their content dicts. `run_agent_team` collects sources, filters by reliability, and populates `legislation_content` from the content dicts.
+3. **Note Taker**: LLM summarizes all compressed content blocks into dense notes
+4. **Summary Writer**: LLM extracts structured data (header + bullets per item) → `WriterOutput`
+5. **Report Storage**: Upserts parent `reports` row (region+date), then `report_headers` rows (one per legislation item with topic, header, bullets). Returns `report_id`.
+6. **Status + Results**: The run record is updated (`succeeded`/`failed`, failures, report_id, serialized topic results); the portal polls `GET /api/runs/{id}` and renders the report.
 
 ### Key Design Decisions
 
@@ -145,11 +148,11 @@ terraform apply -var-file=staging.tfvars
 - Source filtering is handled by the legislation finder agent's system prompt, which includes a classification table for accepting/rejecting sources based on type (government sites, legislative databases, factual news vs. opinion, blogs, aggregators)
 
 **Content extraction inline in web_search (not a separate pipeline node)**
-- The `web_search` tool fetches full page content via Tavily Extract and compresses it via dynamic self-information scoring, returning compressed content directly to the researcher agent
+- The `web_search` tool fetches full page content via Tavily Extract and compresses it via static self-information scoring, returning compressed content directly to the researcher agent
 - This gives the researcher actual content to evaluate source quality and relevance, producing content-informed summaries instead of guessing from search snippets
 - Compressed content flows through state as `{"url", "content"}` dicts, populating `legislation_content` in `run_agent_team.py` without a separate content retrieval step
 
-**Per-source context compression (blended self-information pruning)**
+**Per-source context compression (static self-information pruning)**
 - Each fetched page is independently compressed by `utils/content/compressor.py` inside the `web_search` tool, before entering the researcher agent's context window
 - Raw content is capped at `WEB_SEARCH_PER_URL_CHAR_CAP=30_000` chars per URL before compression
 - At `COMPRESSION_RATE=0.4`, each URL yields ~12K chars of compressed content; with `WEB_SEARCH_MAX_RESULTS=3` and up to 4 searches per researcher, the context budget stays manageable
@@ -164,13 +167,12 @@ terraform apply -var-file=staging.tfvars
 - Pipeline nodes pass `AGENT_RECURSION_LIMIT=40` (from `config/constants.py`) at `ainvoke()` time via the `config` dict, preventing unbounded tool call loops that caused 429 Too Many Requests errors
 - System prompts include explicit "Exit Criteria" sections with measurable stopping conditions
 - Together these reduce LLM request volume ~40% while maintaining research quality
+- Additionally, the web server serializes pipeline runs (one at a time via a single-worker executor)
 
-**Single-region Fargate tasks**
-- Each ECS Fargate task runs ONE region (all topics sequentially)
-- `REGION` env var is validated against `regions` before any API calls
-- Each topic result is saved to DB immediately after pipeline completion
-- After all topics, enqueues `{region, report_id}` to SQS for the Email Lambda
-- If any topic fails (pipeline error, DB save failure, or SQS enqueue failure), failure metadata is sent to the Pipeline DLQ and the task exits 1
+**Serialized background runs, sync routes**
+- One pipeline run at a time; additional runs queue FIFO in the single-worker executor
+- Duplicate requests for an already-active region return 409
+- Routes stay sync `def` so the pipeline's internal `asyncio.run()` never collides with a running event loop
 
 ## LLM Configuration
 
@@ -188,20 +190,12 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 - `OPENAI_API_KEY`: OpenAI API access
 - `TAVILY_API_KEY`: Tavily Search + Extract (web search and content retrieval)
 - `SUPABASE_URL`, `SUPABASE_KEY`: Region/topic config + report storage
-- `TOGETHER_API_KEY`: Dynamic self-information scoring for context compression
 
-> In local/Docker runs these come from `.env`. In AWS they are stored in **SSM Parameter Store** (`/next-voters/<env>/<KEY>`, SecureString) and injected into the ECS task as env vars by the execution role — no code change; they arrive as ordinary env vars.
+**Server** (optional):
+- `HOST`: bind address (default `0.0.0.0`)
+- `PORT`: listen port (default `8000`)
 
-**Container-specific**:
-- `REGION`: Region to run pipeline for (set by Dispatcher Lambda)
-- `SQS_QUEUE_URL`: SQS queue URL for report-ready messages (triggers Email Lambda)
-- `SQS_PIPELINE_DLQ_URL`: SQS dead letter queue URL for pipeline failure metadata
-- `SQS_WORKER_QUEUE_URL`: SQS queue URL for worker jobs (triggers the worker Lambda to post-process the saved report)
-
-**Email Lambda** (separate repo/image — reads SSM at runtime; see `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`):
-- `SHARE_BASE_URL`: Public base URL for report links rendered in emails
-- `MAILGUN_DOMAIN`, `MAILGUN_SENDER`, `MAILGUN_BASE_URL`: Mailgun sending config
-- `MAILGUN_API_KEY_PARAM`, `SUPABASE_URL_PARAM`, `SUPABASE_KEY_PARAM`: **names** of the SSM SecureStrings the Lambda fetches and decrypts at cold start (only the names live in the Lambda env; the values are fetched at runtime)
+All come from `.env` (loaded automatically) or the process environment.
 
 ## Common Patterns
 
@@ -224,9 +218,10 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 
 **Error Handling**
 - Classifier output parse failures → reject all sources (safe fallback)
-- Per-topic failures are logged; container continues remaining topics then exits 1
-- `save_report()` returning `None` is treated as a failure (exit 1)
-- Pipeline failures are sent to the Pipeline DLQ (best-effort — never masks the original error)
+- Pipeline exceptions mark the run `failed` with the error string on the run record
+- Per-topic save failures are recorded in the run's `failures` list; any failure marks the run `failed`
+- `save_report()` returning `None` is treated as a per-topic failure
+- Failure detail is surfaced via `GET /api/runs/{id}` and the portal, plus stderr logs
 
 ## Code Conventions
 
@@ -238,28 +233,20 @@ Use `get_llm()`, `get_mini_llm()` (same config as default), `get_structured_llm(
 
 ## Deployment
 
-**Local**: `REGION=<region> python main.py`
+**Local**: `python main.py` → portal at `http://localhost:8000`
 
 **Docker**:
 ```bash
 docker build -f docker/Dockerfile -t nv-local .
-docker run -e REGION=toronto -e OPENAI_API_KEY=... -e TAVILY_API_KEY=... -e SUPABASE_URL=... -e SUPABASE_KEY=... -e TOGETHER_API_KEY=... nv-local
+docker run -p 8000:8000 --env-file .env nv-local
 ```
 
-**AWS (ECS Fargate)**:
-- EventBridge Scheduler triggers Dispatcher Lambda weekly
-- Dispatcher Lambda launches one Fargate task per supported region
-- Each task runs `main.py` with `REGION` set, executing all topics and saving to Supabase
-- After all topics, task enqueues `{region, report_id}` to SQS; failures go to the Pipeline DLQ
-- Email Lambda reads from `reports` table and sends via **Mailgun** (API key + Supabase creds fetched from SSM at runtime)
-- Infrastructure is **Terraform** (`infrastructure/`); all secrets live in **SSM Parameter Store** — see the *Infrastructure as Code (Terraform)* section above
-
-**Logs**: Emitted to stdout/stderr; collected by CloudWatch in production.
+**Logs**: Emitted to stdout/stderr.
 
 ## Important Known Issues / WIP
 
-- **Email Lambda Mailgun cutover (in progress)**: the Terraform IaC has migrated SES→Mailgun and moved all secrets to SSM, but the Email Lambda's application code (separate repo/image) still needs to implement the SSM fetch + Mailgun send and read `SHARE_BASE_URL`. Implementation prompt + reference code: `docs/EMAIL_LAMBDA_MAILGUN_MIGRATION.md`. Until it ships, also set the SSM secret values + Mailgun DNS, and confirm the dispatcher launches ECS tasks with `assignPublicIp=ENABLED` (the execution role fetches SSM during provisioning).
 - Tavily Extract can fail on some domains (access restrictions, JS-heavy SPAs); when extraction fails for a URL, `web_search` returns an empty content string and the researcher works from search snippets only
+- Run history is in-memory only — a server restart clears the run list (reports remain in Supabase), and a run in flight during shutdown is lost
 
 ## Common Development Tasks
 
@@ -275,12 +262,16 @@ docker run -e REGION=toronto -e OPENAI_API_KEY=... -e TAVILY_API_KEY=... -e SUPA
 2. If the tool needs an external service, add the business logic in `tools/services/` (e.g., `tools/services/tavily.py`)
 3. Import the tool in the agent file (e.g., `from tools import web_search`) and include it in the `tools` list when calling `create_agent`
 
+**Adding an API endpoint**:
+1. Add the route to `api/app.py` as a plain `def` (never `async def` — see the asyncio constraint above)
+2. Keep run-registry logic in `api/runs.py`; `app.py` handles HTTP concerns only
+3. Add endpoint tests to `tests/integration/test_api.py` using `TestClient`
+
 **Changing LLM model or config**:
 1. Update `utils/llm/config.py:DEFAULT_LLM_CONFIG`
 2. Note: All LLM factory functions reference this dict, so one change affects all calls
 
 **Debugging a region pipeline failure**:
-1. Run single region: `REGION=<region_name> python main.py`
-2. Check error message in stdout/stderr
-3. Likely causes: missing env vars (`OPENAI_API_KEY`, `TAVILY_API_KEY`), Tavily Extract failure on a domain, agent hitting `recursion_limit=40` before completing
-4. Container mode: check ECS task logs in CloudWatch, verify `REGION` is in `regions` table
+1. Trigger the region from the portal, then check `GET /api/runs/{id}` for `error`/`failures`
+2. Check error detail in server stdout/stderr
+3. Likely causes: missing env vars (`OPENAI_API_KEY`, `TAVILY_API_KEY`), Tavily Extract failure on a domain, agent hitting `recursion_limit=40` before completing, or the region missing from the Supabase `supported_regions` table

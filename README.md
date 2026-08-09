@@ -24,9 +24,29 @@ Many people — working families, elderly residents, anyone already stretched th
 
 ## Architecture At A Glance
 
-Next Voters is a multi-agent research pipeline. Each run discovers legislation sources, fetches and extracts content, and produces a structured summary — all orchestrated by LangGraph-based agents. It runs as a Docker container, driven by the `REGION` environment variable.
+Next Voters is a multi-agent research pipeline behind a small web portal. A FastAPI server serves the portal and a JSON API; each run discovers legislation sources, fetches and extracts content, and produces a structured summary — all orchestrated by LangGraph-based agents on a background worker thread, with reports saved to Supabase.
 
-For the full picture — agent design, AWS deployment, database schema, and operations — see the [architecture documentation](docs/ARCHITECTURE.md).
+For the full picture — agent design, database schema, and operations — see the [architecture documentation](docs/ARCHITECTURE.md).
+
+## Quick Start
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in your keys
+python main.py         # serves http://localhost:8000
+```
+
+Open `http://localhost:8000` to pick a region, start a run, and browse the finished report. The same functionality is available over the API:
+
+```bash
+curl http://localhost:8000/api/regions                # list supported regions
+curl -X POST http://localhost:8000/api/runs \
+     -H 'Content-Type: application/json' \
+     -d '{"region": "toronto"}'                       # start a run
+curl http://localhost:8000/api/runs                   # poll run status
+curl http://localhost:8000/api/runs/<run_id>          # full run incl. results
+```
 
 ## Documentation
 

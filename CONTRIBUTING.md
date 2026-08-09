@@ -1,6 +1,6 @@
 # Contributing
 
-This project is a small Python codebase that runs as a container, driven by the `REGION` environment variable.
+This project is a small Python codebase: a FastAPI web portal that triggers a multi-agent research pipeline.
 
 ## Development Setup
 
@@ -17,30 +17,36 @@ Environment variables:
 
 ## Running Locally
 
-The pipeline runs in container mode, selecting its region from the `REGION` env var:
+Start the web server and open the portal at `http://localhost:8000`:
 
 ```bash
-REGION=<region> python main.py
+python main.py
+```
+
+For development with auto-reload:
+
+```bash
+uvicorn api.app:app --reload
 ```
 
 Or build and run the container image:
 
 ```bash
 docker build -f docker/Dockerfile -t nv-local .
-docker run -e REGION=<region> --env-file .env nv-local
+docker run -p 8000:8000 --env-file .env nv-local
 ```
 
 ## Testing
 
-There is no dedicated test suite in this repository at the moment.
+```bash
+pytest tests
+```
 
 Quick non-destructive checks you can run:
 
 ```bash
 python -m compileall -q .
 ```
-
-If you add tests, include how to run them in your PR description and consider updating this file.
 
 ## Linting / Formatting
 
